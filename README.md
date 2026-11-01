@@ -50,12 +50,12 @@ composer require infinityinnovationsdev/codeigniter4-encrypted-env
 For development from the source repository:
 
 ```bash
-git clone https://github.com/SKB-TECH/codeigniter4-encrypted-env.git
+git clone https://github.com/InfinityInnovation/codeigniter4-encrypted-env.git
 cd codeigniter4-encrypted-env
 composer install
 ```
 
-Replace `YOUR-USERNAME` with the actual GitHub account or organization after creating the repository.
+Replace `InfinityInnovation` with the actual GitHub account or organization after creating the repository.
 
 ## Generate a Master Key
 
