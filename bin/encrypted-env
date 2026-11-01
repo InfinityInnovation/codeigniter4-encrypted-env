@@ -1,0 +1,75 @@
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use EncryptedEnv\Crypto\AesGcmCipher;
+
+function fail(string $message): never
+{
+    fwrite(STDERR, "Error: {$message}\n");
+    exit(1);
+}
+
+$command = $argv[1] ?? null;
+
+if ($command !== 'encrypt') {
+    fail('Usage: encrypted-env encrypt');
+}
+
+if (isset($argv[2])) {
+    fail('Do not pass secrets as command-line arguments.');
+}
+
+if (!function_exists('shell_exec')) {
+    fail('Interactive terminal support is unavailable.');
+}
+
+$encodedKey = getenv('ENCRYPTED_ENV_MASTER_KEY');
+
+if (!is_string($encodedKey) || $encodedKey === '') {
+    fail('Missing ENCRYPTED_ENV_MASTER_KEY.');
+}
+
+$key = base64_decode($encodedKey, true);
+
+if ($key === false || strlen($key) !== 32) {
+    fail('Invalid master key.');
+}
+
+if (!function_exists('stream_isatty') || !stream_isatty(STDIN)) {
+    fail('An interactive terminal is required.');
+}
+
+fwrite(STDERR, 'Enter secret value: ');
+
+try {
+    $stty = shell_exec('stty -g 2>/dev/null');
+
+    if (!is_string($stty) || trim($stty) === '') {
+        fail('Unable to configure secure terminal input.');
+    }
+
+    $stty = trim($stty);
+
+    try {
+        shell_exec('stty -echo');
+        $value = fgets(STDIN);
+    } finally {
+        shell_exec('stty ' . escapeshellarg($stty));
+        fwrite(STDERR, PHP_EOL);
+    }
+
+    if ($value === false) {
+        fail('Unable to read secret.');
+    }
+
+    $value = rtrim($value, "\r\n");
+
+    $cipher = new AesGcmCipher($key);
+
+    echo $cipher->encrypt($value) . PHP_EOL;
+} catch (Throwable $exception) {
+    fail($exception->getMessage());
+}
