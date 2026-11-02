@@ -1,10 +1,31 @@
 <?php
-
 declare(strict_types=1);
 
-require dirname(__DIR__) . '/vendor/autoload.php';
+// Compatible avec le développement local et Composer.
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    dirname(__DIR__, 3) . '/autoload.php',
+];
+
+$autoload = null;
+
+foreach ($autoloadPaths as $path) {
+    if (is_file($path)) {
+        $autoload = $path;
+        break;
+    }
+}
+
+if ($autoload === null) {
+    fwrite(STDERR, "Error: Composer autoload.php not found.\n");
+    exit(1);
+}
+
+require_once $autoload;
 
 use EncryptedEnv\Crypto\AesGcmCipher;
+use EncryptedEnv\Env\EnvFileManager;
+use EncryptedEnv\Env\EnvFileTransformer;
 
 function fail(string $message): never
 {
@@ -22,10 +43,6 @@ if (isset($argv[2])) {
     fail('Do not pass secrets as command-line arguments.');
 }
 
-if (!function_exists('shell_exec')) {
-    fail('Interactive terminal support is unavailable.');
-}
-
 $encodedKey = getenv('ENCRYPTED_ENV_MASTER_KEY');
 
 if (!is_string($encodedKey) || $encodedKey === '') {
@@ -35,26 +52,49 @@ if (!is_string($encodedKey) || $encodedKey === '') {
 $key = base64_decode($encodedKey, true);
 
 if ($key === false || strlen($key) !== 32) {
-    fail('Invalid master key.');
+    fail('Invalid master key. Expected a Base64-encoded 32-byte key.');
 }
 
+// Encrypt or decrypt the project's .env file.
 if ($command === 'encrypt-file' || $command === 'decrypt-file') {
     try {
-        $path = getcwd() . DIRECTORY_SEPARATOR . '.env';
+        $cwd = getcwd();
 
-        $manager = new \EncryptedEnv\Env\EnvFileManager(
-            new \EncryptedEnv\Env\EnvFileTransformer(
+        if ($cwd === false) {
+            fail('Unable to determine the working directory.');
+        }
+
+        $path = $cwd . DIRECTORY_SEPARATOR . '.env';
+
+        if (!is_file($path)) {
+            fail('.env file not found in the current directory.');
+        }
+
+        if (!is_readable($path)) {
+            fail('.env file is not readable.');
+        }
+
+        $manager = new EnvFileManager(
+            new EnvFileTransformer(
                 new AesGcmCipher($key)
             )
         );
 
-        $manager->process($path, $command === 'encrypt-file');
+        $manager->process(
+            $path,
+            $command === 'encrypt-file'
+        );
 
         echo "Environment file processed successfully." . PHP_EOL;
         exit(0);
     } catch (Throwable $exception) {
         fail($exception->getMessage());
     }
+}
+
+// Interactive encryption of a single value.
+if (!function_exists('shell_exec')) {
+    fail('Secure terminal input is unavailable.');
 }
 
 if (!function_exists('stream_isatty') || !stream_isatty(STDIN)) {
@@ -74,6 +114,7 @@ try {
 
     try {
         shell_exec('stty -echo');
+
         $value = fgets(STDIN);
     } finally {
         shell_exec('stty ' . escapeshellarg($stty));
