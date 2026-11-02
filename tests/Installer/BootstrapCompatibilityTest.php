@@ -535,7 +535,6 @@ PHP;
         $process = proc_open(
             [
                 PHP_BINARY,
-                '-n',
                 '-d',
                 'display_errors=0',
                 '-d',
@@ -575,7 +574,6 @@ PHP;
         $process = proc_open(
             [
                 PHP_BINARY,
-                '-n',
                 '-d',
                 'display_errors=0',
                 '-d',
