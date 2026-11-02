@@ -17,9 +17,9 @@ Instead of storing database passwords, API keys, and other secrets as plaintext 
 
 The library uses **AES-256-GCM**, provided by PHP OpenSSL.
 
-> **Project status:** Experimental. The test matrix covers CodeIgniter 4.3.8 and the latest stable release allowed by `^4.3` (currently 4.7.6). The project has not undergone an independent security audit.
+> **Project status:** Experimental. The test matrix targets CodeIgniter 4.3.7/4.3.8 on PHP 8.1 and the latest stable release allowed by `^4.3` (currently 4.7.6) on PHP 8.2–8.5. The project has not undergone an independent security audit.
 
-> **Legacy framework warning:** CodeIgniter 4.3.8 is retained only as a compatibility-test baseline and has known security advisories. Do not use it in production; use a currently maintained CodeIgniter release instead. The PHP 8.1 / CI 4.3.8 workflow job uses a command-scoped Composer security-blocking exception to test this legacy version; dependency auditing remains enabled and no repository-wide Composer security policy is changed.
+> **Legacy framework warning:** CodeIgniter 4.3.7/4.3.8 are retained only as compatibility-test baselines and have known security advisories. Do not use them in production; use a currently maintained CodeIgniter release instead.
 
 ## Features
 
@@ -87,6 +87,16 @@ php spark env
 
 The path variable must be available before CodeIgniter loads `.env`; do not put the key or its path only in the application's `.env` and expect the encrypted loader to discover it. A variable exported in a terminal is not automatically inherited by PHP-FPM, Apache, IIS, or a container.
 
+### macOS with MAMP
+
+For CLI operations, provide the development key path to the command. For HTTP under MAMP's Apache module, set the path in the application's Apache VirtualHost and restart MAMP:
+
+```apache
+SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /Users/your-user/.config/encrypted-env/development.key
+```
+
+If MAMP routes PHP through a separate PHP-FPM/FastCGI process, configure the variable in that PHP process instead. Neither an interactive shell export nor Apache `SetEnv` is automatically inherited by a separate worker. Keep the key outside the project and restrict access to the development account.
+
 ### PHP-FPM (Nginx or Apache with FPM)
 
 Set the variable in the FPM pool configuration, where the service can read the external key file:
@@ -143,11 +153,11 @@ Never commit key material, paste it into command history, or log it. Prefer a se
 
 ## Spark CLI
 
-The package registers commands with CodeIgniter Spark on the historical 4.3.8 bootstrap and the modern bootstrap used by current CodeIgniter 4 releases. Run them from the application root. The key must already be available to the PHP process through `ENCRYPTED_ENV_MASTER_KEY_FILE` or the legacy `ENCRYPTED_ENV_MASTER_KEY`.
+The package registers commands with CodeIgniter Spark on the historical 4.3.7/4.3.8 bootstrap and the modern bootstrap used by current CodeIgniter 4 releases. Run them from the application root. The key must already be available to the PHP process through `ENCRYPTED_ENV_MASTER_KEY_FILE` or the legacy `ENCRYPTED_ENV_MASTER_KEY`.
 
 | Command | Purpose |
 |---|---|
-| `php spark encrypted-env:install` | Install encrypted DotEnv handling in `spark` and `public/index.php`; safe to rerun. |
+| `php spark encrypted-env:install` | Install encrypted DotEnv handling in `spark` and recognized `public/index.php` or root `index.php` entrypoints; safe to rerun. |
 | `php spark encrypted-env:status` | Summarize versions, bootstrap, `.env`, encrypted-value count and key status. |
 | `php spark encrypted-env:doctor` | Check PHP/OpenSSL, Composer, CodeIgniter/bootstrap compatibility, key validity and ciphertext integrity. |
 | `php spark encrypted-env:key:generate --path=/outside/app/master.key` | Generate a random 32-byte key file with restrictive permissions; refuses overwrite unless `--force` is explicit. |
@@ -234,9 +244,9 @@ Run the package installer from the CodeIgniter project root:
 php spark encrypted-env:install
 ```
 
-It updates `spark` and `public/index.php`, creating `.encrypted-env.bak` backups. The installer recognizes both bootstrap layouts:
+It updates `spark` and the recognized web bootstrap in `public/index.php` or a root-level `index.php`, creating an `.encrypted-env.bak` backup for each changed entrypoint. If both files contain CodeIgniter bootstraps, both are updated; wrapper or unrelated entrypoints are left untouched. The installer recognizes both bootstrap layouts:
 
-- CodeIgniter 4.3.8's `system/bootstrap.php` flow, replacing the standard DotEnv load with `EncryptedDotEnv`.
+- CodeIgniter 4.3.7/4.3.8's `system/bootstrap.php` flow, replacing the standard DotEnv load with `EncryptedDotEnv`.
 - The modern `CodeIgniter\Boot` flow, using `EncryptedBoot`.
 
 The encrypted loader runs before application initialization, so values with the `enc:v1:` prefix are decrypted before the application consumes them. Re-running the installer is safe and reports already-installed entrypoints without overwriting their backups.
@@ -304,7 +314,7 @@ Run the test suite:
 vendor/bin/phpunit
 ```
 
-The test suite covers encryption, decryption, incorrect keys, ciphertext and authentication-tag tampering, invalid encrypted payloads, external key-file resolution, DotEnv loading, file operations, and CLI/web entrypoint integration. The CI workflow is configured for PHP 8.1 with CodeIgniter 4.3.8 and PHP 8.2–8.5 with the latest stable CodeIgniter version accepted by `^4.3`. The compatibility workflow has not been run as part of this local preparation.
+The test suite covers encryption, decryption, incorrect keys, ciphertext and authentication-tag tampering, invalid encrypted payloads, external key-file resolution, DotEnv loading, file operations, and CLI/web entrypoint integration. The CI workflow targets PHP 8.1 with CodeIgniter 4.3.7 and 4.3.8, and PHP 8.2–8.5 with the latest stable CodeIgniter version accepted by `^4.3`. Runtime testing of legacy CodeIgniter on PHP 8.1 must be confirmed by GitHub Actions.
 
 ## Roadmap
 
@@ -313,7 +323,7 @@ The test suite covers encryption, decryption, incorrect keys, ciphertext and aut
 - [x] Basic CodeIgniter DotEnv integration class
 - [x] Interactive encryption CLI
 - [x] PHPUnit security tests
-- [x] CodeIgniter 4.3.8 and latest-compatible bootstrap integration tests
+- [x] CodeIgniter 4.3.7/4.3.8 and latest-compatible bootstrap integration tests
 - [x] CLI and web bootstrap compatibility tests
 - [x] External master-key generation and rotation workflow
 - [x] Spark CLI status, doctor, security, encrypt, decrypt, and test commands
