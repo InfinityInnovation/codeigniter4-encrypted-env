@@ -19,6 +19,8 @@ The library uses **AES-256-GCM**, provided by PHP OpenSSL.
 
 > **Project status:** Experimental. The test matrix covers CodeIgniter 4.3.8 and the latest stable release allowed by `^4.3` (currently 4.7.6). The project has not undergone an independent security audit.
 
+> **Legacy framework warning:** CodeIgniter 4.3.8 is retained only as a compatibility-test baseline and has known security advisories. Do not use it in production; use a currently maintained CodeIgniter release instead. The PHP 8.1 / CI 4.3.8 workflow job uses a command-scoped Composer security-blocking exception to test this legacy version; dependency auditing remains enabled and no repository-wide Composer security policy is changed.
+
 ## Features
 
 - AES-256-GCM authenticated encryption

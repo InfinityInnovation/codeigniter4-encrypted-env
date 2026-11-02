@@ -4,6 +4,8 @@
 
 The package supports CodeIgniter 4.3.8's legacy bootstrap and tests the latest stable CodeIgniter version allowed by the Composer constraint `^4.3` (currently 4.7.6). It decrypts `.env` values beginning with `enc:v1:` before CodeIgniter uses them. The AES-256-GCM format is unchanged.
 
+> **Legacy framework warning:** CodeIgniter 4.3.8 is covered only as a legacy compatibility baseline and has known security advisories. Do not use it in production; use a currently maintained CodeIgniter release. The PHP 8.1 / CI 4.3.8 CI job uses a command-scoped Composer security-blocking exception only to resolve this historical dependency. It does not disable dependency auditing or change the repository-wide Composer policy.
+
 ### Configure the external key
 
 Generate a 32-byte key and encode it as Base64:
@@ -128,6 +130,8 @@ To rotate keys without losing access, run `key:rotate` with the old key configur
 ## Français
 
 Le package prend en charge le bootstrap historique de CodeIgniter 4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Il déchiffre les valeurs `.env` commençant par `enc:v1:` avant leur utilisation par CodeIgniter. Le format AES-256-GCM reste inchangé.
+
+> **Avertissement sur la version historique :** CodeIgniter 4.3.8 est conservé uniquement comme base de compatibilité ancienne et comporte des avis de sécurité connus. Ne pas l'utiliser en production ; privilégier une version CodeIgniter maintenue. Le job CI PHP 8.1 / CI 4.3.8 applique une exception Composer de blocage de sécurité limitée à cette commande pour résoudre cette dépendance historique. L'audit des dépendances reste actif et la politique Composer globale du dépôt n'est pas modifiée.
 
 ### Configurer la clé externe
 
