@@ -6,3 +6,5 @@ vendor/
 .DS_Store
 
 .phpunit.result.cache
+
+/bin/encrypted-env.backup

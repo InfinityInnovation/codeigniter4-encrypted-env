@@ -14,8 +14,8 @@ function fail(string $message): never
 
 $command = $argv[1] ?? null;
 
-if ($command !== 'encrypt') {
-    fail('Usage: encrypted-env encrypt');
+if (!in_array($command, ['encrypt', 'encrypt-file', 'decrypt-file'], true)) {
+    fail('Usage: encrypted-env encrypt|encrypt-file|decrypt-file');
 }
 
 if (isset($argv[2])) {
@@ -36,6 +36,25 @@ $key = base64_decode($encodedKey, true);
 
 if ($key === false || strlen($key) !== 32) {
     fail('Invalid master key.');
+}
+
+if ($command === 'encrypt-file' || $command === 'decrypt-file') {
+    try {
+        $path = getcwd() . DIRECTORY_SEPARATOR . '.env';
+
+        $manager = new \EncryptedEnv\Env\EnvFileManager(
+            new \EncryptedEnv\Env\EnvFileTransformer(
+                new AesGcmCipher($key)
+            )
+        );
+
+        $manager->process($path, $command === 'encrypt-file');
+
+        echo "Environment file processed successfully." . PHP_EOL;
+        exit(0);
+    } catch (Throwable $exception) {
+        fail($exception->getMessage());
+    }
 }
 
 if (!function_exists('stream_isatty') || !stream_isatty(STDIN)) {
