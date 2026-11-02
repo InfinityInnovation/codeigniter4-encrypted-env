@@ -12,6 +12,13 @@ final class MasterKeyResolver
     private const KEY_ENVIRONMENT_VARIABLE = 'ENCRYPTED_ENV_MASTER_KEY';
     private const MAX_KEY_FILE_SIZE = 1024;
 
+    public function hasConfiguredKey(?string $masterKey = null): bool
+    {
+        return $masterKey !== null
+            || $this->getEnvironmentValue(self::FILE_ENVIRONMENT_VARIABLE) !== null
+            || $this->getEnvironmentValue(self::KEY_ENVIRONMENT_VARIABLE) !== null;
+    }
+
     public function resolve(?string $masterKey = null): string
     {
         $keyFile = $this->getEnvironmentValue(self::FILE_ENVIRONMENT_VARIABLE);
