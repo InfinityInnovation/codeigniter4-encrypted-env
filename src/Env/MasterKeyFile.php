@@ -103,44 +103,25 @@ final class MasterKeyFile
      */
     public function check(MasterKeyResolver $resolver): array
     {
-        $keyFile = $this->environmentValue('ENCRYPTED_ENV_MASTER_KEY_FILE');
-        $directKey = $this->environmentValue('ENCRYPTED_ENV_MASTER_KEY');
+        $configuration = ['source' => 'none', 'path' => null];
 
         try {
+            $configuration = $resolver->configurationSource();
             $key = $resolver->resolve();
 
             return [
-                'source' => $keyFile !== null ? 'file' : 'environment',
-                'path' => $keyFile,
+                'source' => $configuration['source'],
+                'path' => $configuration['path'],
                 'valid' => true,
                 'message' => 'Configured master key is valid.',
             ];
         } catch (\Throwable $exception) {
             return [
-                'source' => $keyFile !== null
-                    ? 'file'
-                    : ($directKey !== null ? 'environment' : 'none'),
-                'path' => $keyFile,
+                'source' => $configuration['source'],
+                'path' => $configuration['path'],
                 'valid' => false,
                 'message' => $exception->getMessage(),
             ];
         }
-    }
-
-    private function environmentValue(string $name): ?string
-    {
-        $value = getenv($name);
-
-        if ($value !== false) {
-            return $value;
-        }
-
-        foreach ([$_SERVER, $_ENV] as $environment) {
-            if (isset($environment[$name]) && is_string($environment[$name])) {
-                return $environment[$name];
-            }
-        }
-
-        return null;
     }
 }

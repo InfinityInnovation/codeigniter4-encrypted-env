@@ -33,6 +33,23 @@ This setting must reach PHP before CodeIgniter loads `.env`. Do not put the key 
 
 Use a distinct external key file and explicitly configured path for development, staging, and production. The package does not infer a key location from MAMP, Apache, Nginx, or the operating system.
 
+If the HTTP runtime does not receive environment variables, create `app/Config/EncryptedEnv.local.php` with only the external key-file path:
+
+```php
+<?php
+if (
+    ! defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')
+    || realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)
+) {
+    http_response_code(404);
+    exit;
+}
+
+return ['master_key_file' => '/absolute/path/to/external/master.key'];
+```
+
+Use `/Users/your-user/.config/encrypted-env/development.key` for macOS development or a deployment-managed path such as `/etc/my-app-secrets/production.key` on Linux. Add `/app/Config/EncryptedEnv.local.php` to the application `.gitignore`. This local PHP file contains no key, is loaded before `.env` by CLI and web bootstraps, and returns HTTP 404 when requested directly. Store the key itself outside the project and document root. Existing process configuration takes priority; invalid explicit configuration fails rather than falling back.
+
 ### CLI
 
 Make the path available in the environment of the same account that runs Spark:
@@ -171,6 +188,23 @@ ENCRYPTED_ENV_MASTER_KEY_FILE=/chemin/absolu/vers/master.key
 ```
 
 Cette configuration doit être disponible pour PHP avant le chargement du `.env` de CodeIgniter. Ne placez ni la clé ni uniquement ce chemin dans le `.env` de l'application. Si le chemin du fichier est configuré mais que le fichier est absent, illisible, vide, en Base64 invalide ou ne contient pas exactement 32 octets après décodage, le démarrage échoue explicitement, sans fallback vers `ENCRYPTED_ENV_MASTER_KEY`. Si aucun chemin n'est configuré, la variable directe historique `ENCRYPTED_ENV_MASTER_KEY` reste prise en charge.
+
+Si le serveur HTTP ne transmet pas les variables d'environnement à PHP, créer `app/Config/EncryptedEnv.local.php` avec uniquement le chemin externe de la clé :
+
+```php
+<?php
+if (
+    ! defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')
+    || realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)
+) {
+    http_response_code(404);
+    exit;
+}
+
+return ['master_key_file' => '/chemin/absolu/vers/une-cle-externe/master.key'];
+```
+
+Sur macOS, un chemin de développement possible est `/Users/votre-compte/.config/encrypted-env/development.key`. Sous Linux, utiliser un chemin fourni par le déploiement, tel que `/etc/mon-application-secrets/production.key`. Ajouter `/app/Config/EncryptedEnv.local.php` au `.gitignore` de l'application. Ce fichier PHP ne contient pas la clé, est lu avant `.env` par les bootstraps CLI et Web et renvoie HTTP 404 en cas d'accès direct. Stocker le fichier de clé hors du projet et de la racine Web. Les variables de processus restent prioritaires ; une configuration explicite invalide échoue sans fallback.
 
 ### CLI
 

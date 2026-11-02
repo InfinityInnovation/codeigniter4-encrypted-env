@@ -39,8 +39,10 @@ final class SecurityAuditor
                 : 'No master-key setting found in the application .env.'
         );
 
-        $key = (new MasterKeyFile())->check(new MasterKeyResolver());
-        $keyPath = $key['source'] === 'file' ? $key['path'] : null;
+        $key = (new MasterKeyFile())->check(new MasterKeyResolver($root));
+        $keyPath = in_array($key['source'], ['file', 'local'], true)
+            ? $key['path']
+            : null;
         $external = is_string($keyPath)
             && $keyPath !== ''
             && is_file($keyPath)
@@ -48,8 +50,9 @@ final class SecurityAuditor
             && ! $this->isWithinRoot(realpath($keyPath), $root);
         $checks[] = $this->result(
             'External key configuration',
-            $key['valid'] && ($key['source'] === 'environment' || $external),
-            $key['source'] === 'file'
+            $key['valid']
+                && (in_array($key['source'], ['environment', 'local'], true) || $external),
+            in_array($key['source'], ['file', 'local'], true)
                 ? ($external ? 'Configured file is outside the project.' : 'Key file is missing or inside the project.')
                 : ($key['source'] === 'environment'
                     ? 'Direct process environment key is configured.'
@@ -67,7 +70,7 @@ final class SecurityAuditor
         } else {
             $checks[] = $this->result(
                 'Key file permissions',
-                $key['source'] !== 'file',
+                ! in_array($key['source'], ['file', 'local'], true),
                 'File permission check is unavailable.'
             );
         }
@@ -302,7 +305,7 @@ final class SecurityAuditor
         $encodedKey = null;
 
         try {
-            $encodedKey = base64_encode((new MasterKeyResolver())->resolve());
+            $encodedKey = base64_encode((new MasterKeyResolver($root))->resolve());
         } catch (Throwable) {
             // Key configuration is reported by the separate key checks.
         }

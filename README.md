@@ -79,6 +79,35 @@ ENCRYPTED_ENV_MASTER_KEY=BASE64_KEY
 
 When `ENCRYPTED_ENV_MASTER_KEY_FILE` is set, that file is authoritative and takes priority over `ENCRYPTED_ENV_MASTER_KEY`. A missing, unreadable, empty, malformed, or invalid file stops startup; there is no fallback. If the file variable is unset, the existing direct key variable remains supported. The optional `EncryptedDotEnv` constructor argument continues to work for callers that supply a key explicitly.
 
+### Local PHP configuration (CLI and HTTP)
+
+When an HTTP server does not pass process environment variables to PHP, an application may explicitly configure the key-file path in `app/Config/EncryptedEnv.local.php`. The file contains only a path, never key material:
+
+```php
+<?php
+if (
+    ! defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')
+    || realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)
+) {
+    http_response_code(404);
+    exit;
+}
+
+return [
+    'master_key_file' => '/absolute/path/to/external/master.key',
+];
+```
+
+For macOS development, a typical external key location is `/Users/your-user/.config/encrypted-env/development.key`. On Linux, use a deployment-managed path such as `/etc/my-app-secrets/production.key`. Configure a separate key path for development, staging, and production. Keep the key file outside the repository and web root, with permissions limited to the PHP process identity. The package does not search other locations, choose a default, or generate a key.
+
+Add the local config path to the **application's** `.gitignore`:
+
+```gitignore
+/app/Config/EncryptedEnv.local.php
+```
+
+The package repository ignores this path too. The config has a PHP guard that returns HTTP 404 when requested directly; keep it in `app/Config`, outside the public document root. Normal CodeIgniter bootstraps load it before `.env` for `spark`, root `index.php`, and `public/index.php`. Existing process settings remain authoritative: `ENCRYPTED_ENV_MASTER_KEY_FILE`, then the explicit constructor key, then `ENCRYPTED_ENV_MASTER_KEY`, then this local config. An explicitly configured but invalid source fails without falling back.
+
 For local CLI use, configure the path for the PHP process:
 ```bash
 export ENCRYPTED_ENV_MASTER_KEY_FILE="$HOME/.config/encrypted-env/master.key"

@@ -10,6 +10,7 @@ use EncryptedEnv\Diagnostics\ProjectInspector;
 use EncryptedEnv\Env\EnvFileTransaction;
 use EncryptedEnv\Env\EnvFileTransformer;
 use EncryptedEnv\Env\MasterKeyFile;
+use EncryptedEnv\Env\MasterKeyResolver;
 use RuntimeException;
 
 final class KeyRotateCommand extends EncryptedEnvCommand
@@ -61,7 +62,9 @@ final class KeyRotateCommand extends EncryptedEnvCommand
 
             $path = $this->envPath($params);
             $keyPath = $this->validateExternalKeyPath($keyPath);
-            $configuredKeyPath = getenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
+            $configuredKeyPath = (new MasterKeyResolver(
+                $this->projectRoot()
+            ))->configurationSource()['path'];
 
             if (
                 is_string($configuredKeyPath)

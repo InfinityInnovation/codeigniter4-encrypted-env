@@ -166,6 +166,7 @@ PHP
             self::assertSame(32, strlen($key));
             self::assertStringNotContainsString($encodedKey, $output . $error);
 
+            $this->writeLocalKeyConfiguration($root, $keyPath);
             $cipher = new AesGcmCipher($key);
             $envContent = 'CI_ENVIRONMENT=' . $cipher->encrypt('development') . PHP_EOL;
 
@@ -175,7 +176,7 @@ PHP
 
             file_put_contents($root . '/.env', $envContent);
             chmod($root . '/.env', 0600);
-            putenv('ENCRYPTED_ENV_MASTER_KEY_FILE=' . $keyPath);
+            putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
 
             [$exitCode, $output, $error] = $this->execute(
                 $root . '/spark',
@@ -213,6 +214,14 @@ PHP
                     self::assertStringNotContainsString($value, $error);
                 }
             }
+
+            [$configurationResponse, , $configurationStatus] = $this->executeWeb(
+                $root,
+                '/app/Config/EncryptedEnv.local.php',
+                null
+            );
+            self::assertSame(404, $configurationStatus);
+            self::assertStringNotContainsString($keyPath, (string) $configurationResponse);
         } finally {
             if ($previousKey === false) {
                 putenv('ENCRYPTED_ENV_MASTER_KEY');
@@ -257,6 +266,77 @@ PHP
         }
     }
 
+    public function testCliAndHttpRejectEncryptedValuesWithMissingOrInvalidLocalKey(): void
+    {
+        $previousKey = getenv('ENCRYPTED_ENV_MASTER_KEY');
+        $previousKeyFile = getenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
+        $cases = [
+            ['legacy', 'missing'],
+            ['legacy', 'invalid'],
+            ['modern', 'missing'],
+            ['modern', 'invalid'],
+        ];
+
+        putenv('ENCRYPTED_ENV_MASTER_KEY');
+        putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
+
+        try {
+            foreach ($cases as [$style, $keyState]) {
+                $root = sys_get_temp_dir() . '/encrypted-env-' . bin2hex(random_bytes(8));
+                $key = random_bytes(32);
+                $expected = 'must-not-leak-' . bin2hex(random_bytes(4));
+                $this->createProject(
+                    $root,
+                    $style,
+                    $key,
+                    $expected,
+                    'secondary-' . bin2hex(random_bytes(4)),
+                    'public/index.php'
+                );
+                $keyPath = $root . '-master.key';
+
+                if ($keyState === 'invalid') {
+                    file_put_contents($keyPath, 'invalid-key-material');
+                    $this->writeLocalKeyConfiguration($root, $keyPath);
+                }
+
+                try {
+                    $installer = new CodeIgniterInstaller();
+                    $installer->install($root);
+
+                    [$exitCode, $output, $error] = $this->execute(
+                        $root . '/spark',
+                        $root
+                    );
+                    self::assertNotSame(0, $exitCode);
+                    self::assertStringNotContainsString($expected, $output . $error);
+
+                    [$response, $webError, $status, $serverLog] = $this->executeWeb($root);
+                    self::assertNotSame(200, $status);
+                    self::assertStringNotContainsString(
+                        $expected,
+                        (string) $response . $webError . $serverLog
+                    );
+                } finally {
+                    $this->removeDirectory($root);
+                    @unlink($keyPath);
+                }
+            }
+        } finally {
+            if ($previousKey === false) {
+                putenv('ENCRYPTED_ENV_MASTER_KEY');
+            } else {
+                putenv('ENCRYPTED_ENV_MASTER_KEY=' . $previousKey);
+            }
+
+            if ($previousKeyFile === false) {
+                putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
+            } else {
+                putenv('ENCRYPTED_ENV_MASTER_KEY_FILE=' . $previousKeyFile);
+            }
+        }
+    }
+
     private function assertBootstrapsDecryptBeforeUse(
         string $style,
         string $webEntrypoint = 'public/index.php'
@@ -278,6 +358,7 @@ PHP
         $keyPath = $root . '-master.key';
         file_put_contents($keyPath, base64_encode($key) . PHP_EOL);
         chmod($keyPath, 0600);
+        $this->writeLocalKeyConfiguration($root, $keyPath);
 
         $previousKey = getenv('ENCRYPTED_ENV_MASTER_KEY');
         $previousKeyFile = getenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
@@ -298,7 +379,7 @@ PHP
             unset($_SERVER[$name], $_ENV[$name]);
         }
 
-        putenv('ENCRYPTED_ENV_MASTER_KEY_FILE=' . $keyPath);
+        putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
         putenv('ENCRYPTED_ENV_MASTER_KEY');
 
         try {
@@ -576,6 +657,26 @@ PHP;
         file_put_contents($root . '/' . $webEntrypoint, $web);
     }
 
+    private function writeLocalKeyConfiguration(string $root, string $keyPath): void
+    {
+        $configuration = <<<'PHP'
+<?php
+if (
+    ! defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')
+    || realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)
+) {
+    http_response_code(404);
+    exit;
+}
+
+return ['master_key_file' => __KEY_PATH__];
+PHP;
+        file_put_contents(
+            $root . '/app/Config/EncryptedEnv.local.php',
+            str_replace('__KEY_PATH__', var_export($keyPath, true), $configuration)
+        );
+    }
+
     /**
      * @return array{int, string, string}
      */
@@ -618,7 +719,7 @@ PHP;
     private function executeWeb(
         string $workingDirectory,
         string $requestPath = '/',
-        string $entrypoint = 'public/index.php'
+        ?string $entrypoint = 'public/index.php'
     ): array {
         $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
         self::assertIsResource($socket, $errorMessage);
@@ -626,17 +727,24 @@ PHP;
         fclose($socket);
 
         self::assertIsString($address);
+        $command = [
+            PHP_BINARY,
+            '-d',
+            'display_errors=0',
+            '-d',
+            'display_startup_errors=0',
+            '-S',
+            $address,
+            '-t',
+            $entrypoint === 'public/index.php' ? 'public' : '.',
+        ];
+
+        if ($entrypoint !== null) {
+            $command[] = $entrypoint;
+        }
+
         $process = proc_open(
-            [
-                PHP_BINARY,
-                '-d',
-                'display_errors=0',
-                '-d',
-                'display_startup_errors=0',
-                '-S',
-                $address,
-                $entrypoint,
-            ],
+            $command,
             [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],

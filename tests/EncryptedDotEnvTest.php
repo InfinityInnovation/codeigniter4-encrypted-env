@@ -40,6 +40,9 @@ final class EncryptedDotEnvTest extends TestCase
     {
         @unlink($this->directory . '/.env');
         @unlink($this->directory . '/master.key');
+        @unlink($this->directory . '/app/Config/EncryptedEnv.local.php');
+        @rmdir($this->directory . '/app/Config');
+        @rmdir($this->directory . '/app');
         @rmdir($this->directory);
 
         foreach ([
@@ -125,6 +128,30 @@ final class EncryptedDotEnvTest extends TestCase
         self::assertSame('secret123', getenv('TEST_ENCRYPTED_VALUE'));
         self::assertSame('another-secret', getenv('TEST_ENCRYPTED_SECOND'));
         self::assertSame('secret123', getenv('TEST_ENCRYPTED_NESTED'));
+    }
+
+    public function testLocalPhpConfigurationDecryptsWithoutWebServerEnvironmentVariables(): void
+    {
+        $cipher = new AesGcmCipher($this->key);
+        $this->writeEnv(
+            'TEST_ENCRYPTED_WITH_ENV_KEY=' . $cipher->encrypt('local-config-value') . PHP_EOL
+        );
+        $keyPath = $this->directory . '/master.key';
+        file_put_contents($keyPath, base64_encode($this->key) . PHP_EOL);
+        $configurationDirectory = $this->directory . '/app/Config';
+        mkdir($configurationDirectory, 0700, true);
+        file_put_contents(
+            $configurationDirectory . '/EncryptedEnv.local.php',
+            "<?php\n"
+                . "if (! defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')"
+                . " || realpath(\$_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {"
+                . " http_response_code(404); exit; }\n"
+                . 'return ' . var_export(['master_key_file' => $keyPath], true) . ';'
+        );
+
+        (new EncryptedDotEnv($this->directory))->load();
+
+        self::assertSame('local-config-value', getenv('TEST_ENCRYPTED_WITH_ENV_KEY'));
     }
 
     public function testPlainValueIsPreserved(): void

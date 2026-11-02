@@ -181,7 +181,7 @@ abstract class EncryptedEnvCommand extends BaseCommand
 
     protected function masterKey(): string
     {
-        return (new MasterKeyResolver())->resolve();
+        return (new MasterKeyResolver($this->projectRoot()))->resolve();
     }
 
     protected function isAbsolutePath(string $path): bool
