@@ -2,9 +2,9 @@
 
 ## English
 
-The package supports CodeIgniter 4.3.8's legacy bootstrap and tests the latest stable CodeIgniter version allowed by the Composer constraint `^4.3` (currently 4.7.6). It decrypts `.env` values beginning with `enc:v1:` before CodeIgniter uses them. The AES-256-GCM format is unchanged.
+The package supports CodeIgniter 4.3.7/4.3.8's legacy bootstrap and tests the latest stable CodeIgniter version allowed by the Composer constraint `^4.3` (currently 4.7.6). It decrypts `.env` values beginning with `enc:v1:` before CodeIgniter uses them. The AES-256-GCM format is unchanged.
 
-> **Legacy framework warning:** CodeIgniter 4.3.8 is covered only as a legacy compatibility baseline and has known security advisories. Do not use it in production; use a currently maintained CodeIgniter release. The PHP 8.1 / CI 4.3.8 CI job uses a command-scoped Composer security-blocking exception only to resolve this historical dependency. It does not disable dependency auditing or change the repository-wide Composer policy.
+> **Legacy framework warning:** CodeIgniter 4.3.7/4.3.8 are covered only as legacy compatibility baselines and have known security advisories. Do not use these versions in production; use a currently maintained CodeIgniter release.
 
 ### Configure the external key
 
@@ -30,6 +30,8 @@ ENCRYPTED_ENV_MASTER_KEY_FILE=/absolute/path/to/master.key
 ```
 
 This setting must reach PHP before CodeIgniter loads `.env`. Do not put the key or only this path in the application's `.env`. If the file path is configured but its file is missing, unreadable, empty, invalid Base64, or does not decode to exactly 32 bytes, startup fails explicitly; the package does not fall back to `ENCRYPTED_ENV_MASTER_KEY`. If no file path is configured, the legacy direct `ENCRYPTED_ENV_MASTER_KEY` setting remains supported.
+
+Use a distinct external key file and explicitly configured path for development, staging, and production. The package does not infer a key location from MAMP, Apache, Nginx, or the operating system.
 
 ### CLI
 
@@ -61,6 +63,16 @@ SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /etc/my-app-secrets/master.key
 ```
 
 Reload Apache and grant read access only to the required service identity and deployment administrator. `SetEnv` does not configure a separate PHP-FPM process.
+
+### macOS with MAMP
+
+For CLI use, pass the development key path to that command. For HTTP requests with PHP running as an Apache module, configure the path in the MAMP Apache virtual host:
+
+```apache
+SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /Users/your-user/.config/encrypted-env/development.key
+```
+
+Reload MAMP's Apache service and verify key resolution from CLI and with a harmless HTTP health check. If MAMP uses a separate PHP-FPM/FastCGI process, configure the variable in that PHP process's environment instead; terminal exports and Apache `SetEnv` are not automatically inherited by a separate worker. Keep the key outside the project and limit its permissions to the local development account.
 
 ### Windows Server with IIS and PHP-FastCGI
 
@@ -107,7 +119,7 @@ To rotate keys without losing access, keep the old key available while decryptin
 
 ### Spark CLI
 
-The package registers these commands with CodeIgniter 4.3.8 and the modern CodeIgniter 4 bootstrap:
+The package registers these commands with the CodeIgniter 4.3.7/4.3.8 historical and modern CodeIgniter 4 bootstraps:
 
 ```bash
 php spark encrypted-env:install
@@ -123,15 +135,17 @@ php spark encrypted-env:test
 php spark encrypted-env:restore .env.encrypted-env-rotate-YYYYMMDD-HHMMSS-xxxxxxxx.bak --yes
 ```
 
+`encrypted-env:install` updates `spark` and detects CodeIgniter web bootstraps in `public/index.php` or a root-level `index.php`. If both are actual framework entrypoints, both are updated; unrelated wrapper files are left untouched. Each changed file gets an `.encrypted-env.bak` backup, and the installer rolls back on failure.
+
 Commands that accept file paths support `--file=/absolute/path/to/.env`; diagnostics and installation support `--root=/absolute/path/to/project`. `key:generate` refuses an existing path, and `--force` is required to confirm overwriting. Decryption and rotation require `--yes` in non-interactive use. The key is never printed. By default, `CI_ENVIRONMENT`, `PATH`, `HOME`, `USER`, `SHELL`, `PWD`, and `TMPDIR` remain plaintext; other eligible values are encrypted. Every changed `.env` is atomically replaced only after a persistent protected backup has been written. On POSIX, backups and decrypted output use mode `0600`; on Windows, they inherit the parent directory's NTFS ACL, which must be restricted.
 
 To rotate keys without losing access, run `key:rotate` with the old key configured and a **different, unused external path** for the new key. The command keeps the old key, creates the new key file, decrypts/re-encrypts values and validates the new ciphertext before replacing `.env`. It does not modify the active PHP environment. Then configure `ENCRYPTED_ENV_MASTER_KEY_FILE` for both CLI and web processes to the new path and verify `key:check`, `test`, CLI startup, and HTTP startup. Retain the old key and the protected rotation backup until all restore paths and old deployments have been verified or expired. For rollback, restore the package backup with the old key available and restore the old key path in both process configurations.
 
 ## Français
 
-Le package prend en charge le bootstrap historique de CodeIgniter 4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Il déchiffre les valeurs `.env` commençant par `enc:v1:` avant leur utilisation par CodeIgniter. Le format AES-256-GCM reste inchangé.
+Le package prend en charge les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Il déchiffre les valeurs `.env` commençant par `enc:v1:` avant leur utilisation par CodeIgniter. Le format AES-256-GCM reste inchangé.
 
-> **Avertissement sur la version historique :** CodeIgniter 4.3.8 est conservé uniquement comme base de compatibilité ancienne et comporte des avis de sécurité connus. Ne pas l'utiliser en production ; privilégier une version CodeIgniter maintenue. Le job CI PHP 8.1 / CI 4.3.8 applique une exception Composer de blocage de sécurité limitée à cette commande pour résoudre cette dépendance historique. L'audit des dépendances reste actif et la politique Composer globale du dépôt n'est pas modifiée.
+> **Avertissement sur les versions historiques :** CodeIgniter 4.3.7/4.3.8 sont conservés uniquement comme bases de compatibilité anciennes et comportent des avis de sécurité connus. Ne pas les utiliser en production ; privilégier une version CodeIgniter maintenue.
 
 ### Configurer la clé externe
 
@@ -189,6 +203,16 @@ SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /etc/mon-application-secrets/master.key
 
 Recharger Apache et réserver la lecture à l'identité de service nécessaire et à l'administrateur de déploiement. `SetEnv` ne configure pas un processus PHP-FPM séparé.
 
+### macOS avec MAMP
+
+Pour la CLI, fournir le chemin de la clé de développement à la commande. Pour les requêtes HTTP lorsque PHP s'exécute comme module Apache, configurer le chemin dans le VirtualHost Apache de MAMP :
+
+```apache
+SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /Users/votre-compte/.config/encrypted-env/development.key
+```
+
+Recharger le service Apache de MAMP et vérifier la résolution de clé en CLI ainsi qu'avec un contrôle HTTP sans secret. Si MAMP utilise un processus PHP-FPM/FastCGI séparé, configurer la variable dans l'environnement de ce processus ; les exports du terminal et `SetEnv` ne sont pas hérités automatiquement par un processus séparé. Garder la clé hors du projet et limiter ses permissions au compte local de développement.
+
 ### Windows Server avec IIS et PHP-FastCGI
 
 Dans IIS Manager, ouvrir **FastCGI Settings**, sélectionner l'exécutable PHP puis ajouter une variable d'environnement :
@@ -234,7 +258,7 @@ Pour faire une rotation sans perdre l'accès, conserver l'ancienne clé pendant 
 
 ### CLI Spark
 
-Le package enregistre ces commandes avec CodeIgniter 4.3.8 et le bootstrap moderne de CodeIgniter 4 :
+Le package enregistre ces commandes avec les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 et le bootstrap moderne de CodeIgniter 4 :
 
 ```bash
 php spark encrypted-env:install
@@ -249,6 +273,8 @@ php spark encrypted-env:security:check
 php spark encrypted-env:test
 php spark encrypted-env:restore .env.encrypted-env-rotate-YYYYMMDD-HHMMSS-xxxxxxxx.bak --yes
 ```
+
+`encrypted-env:install` adapte `spark` et détecte les bootstraps CodeIgniter dans `public/index.php` ou dans un `index.php` à la racine. Si les deux sont de véritables points d'entrée, ils sont tous deux adaptés ; les wrappers sans bootstrap restent intacts. Chaque fichier modifié reçoit une sauvegarde `.encrypted-env.bak` et l'installation restaure les originaux en cas d'échec.
 
 Les commandes qui acceptent un fichier prennent `--file=/chemin/absolu/vers/.env`; les diagnostics et l'installation acceptent `--root=/chemin/absolu/du/projet`. `key:generate` refuse un chemin existant ; `--force` est nécessaire pour confirmer son remplacement. Le déchiffrement et la rotation exigent `--yes` en mode non interactif. La clé n'est jamais affichée. Par défaut, `CI_ENVIRONMENT`, `PATH`, `HOME`, `USER`, `SHELL`, `PWD` et `TMPDIR` restent en clair ; les autres valeurs éligibles sont chiffrées. Chaque `.env` modifié est remplacé atomiquement après création d'une sauvegarde persistante protégée. Sur POSIX, les sauvegardes et le fichier déchiffré sont en mode `0600` ; sur Windows, ils héritent des ACL NTFS du dossier parent, qui doivent être restrictives.
 

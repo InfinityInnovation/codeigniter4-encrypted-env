@@ -18,6 +18,16 @@ final class BootstrapCompatibilityTest extends TestCase
         $this->assertBootstrapsDecryptBeforeUse('modern');
     }
 
+    public function testLegacyBootstrapsWorkWithRootIndexEntrypoint(): void
+    {
+        $this->assertBootstrapsDecryptBeforeUse('legacy', 'index.php');
+    }
+
+    public function testModernBootstrapsWorkWithRootIndexEntrypoint(): void
+    {
+        $this->assertBootstrapsDecryptBeforeUse('modern', 'index.php');
+    }
+
     public function testInstalledFrameworkCanGenerateItsInitialKeyAndLoadEncryptedDotEnv(): void
     {
         $framework = dirname(__DIR__, 2) . '/vendor/codeigniter4/framework';
@@ -247,14 +257,24 @@ PHP
         }
     }
 
-    private function assertBootstrapsDecryptBeforeUse(string $style): void
+    private function assertBootstrapsDecryptBeforeUse(
+        string $style,
+        string $webEntrypoint = 'public/index.php'
+    ): void
     {
         $root = sys_get_temp_dir() . '/encrypted-env-' . bin2hex(random_bytes(8));
         $key = random_bytes(32);
         $expected = 'decrypted-' . bin2hex(random_bytes(4));
         $secondExpected = 'second-' . bin2hex(random_bytes(4));
 
-        $this->createProject($root, $style, $key, $expected, $secondExpected);
+        $this->createProject(
+            $root,
+            $style,
+            $key,
+            $expected,
+            $secondExpected,
+            $webEntrypoint
+        );
         $keyPath = $root . '-master.key';
         file_put_contents($keyPath, base64_encode($key) . PHP_EOL);
         chmod($keyPath, 0600);
@@ -287,11 +307,11 @@ PHP
             $secondInstall = $installer->install($root);
 
             self::assertSame('installed', $firstInstall['spark']);
-            self::assertSame('installed', $firstInstall['public/index.php']);
+            self::assertSame('installed', $firstInstall[$webEntrypoint]);
             self::assertSame('already installed', $secondInstall['spark']);
-            self::assertSame('already installed', $secondInstall['public/index.php']);
+            self::assertSame('already installed', $secondInstall[$webEntrypoint]);
             self::assertFileExists($root . '/spark.encrypted-env.bak');
-            self::assertFileExists($root . '/public/index.php.encrypted-env.bak');
+            self::assertFileExists($root . '/' . $webEntrypoint . '.encrypted-env.bak');
 
             [$exitCode, $output, $error] = $this->execute(
                 $root . '/spark',
@@ -303,7 +323,11 @@ PHP
                 trim($output)
             );
 
-            [$response, $error, $status, $serverLog] = $this->executeWeb($root);
+            [$response, $error, $status, $serverLog] = $this->executeWeb(
+                $root,
+                '/',
+                $webEntrypoint
+            );
             self::assertSame(200, $status, $error . $serverLog);
             self::assertSame('1|1|1', trim((string) $response), $error . $serverLog);
             self::assertStringNotContainsString($expected, (string) $response);
@@ -353,10 +377,13 @@ PHP
         string $style,
         string $key,
         string $expected,
-        string $secondExpected
+        string $secondExpected,
+        string $webEntrypoint
     ): void {
         mkdir($root . '/app/Config', 0700, true);
-        mkdir($root . '/public', 0700, true);
+        if (str_contains($webEntrypoint, '/')) {
+            mkdir($root . '/public', 0700, true);
+        }
         mkdir($root . '/system/Config', 0700, true);
         mkdir(
             $root . '/vendor/infinityinnovationsdev/codeigniter4-encrypted-env',
@@ -456,13 +483,13 @@ echo implode('|', array_map(static fn (bool $check): string => $check ? '1' : '0
 PHP;
             $web = <<<'PHP'
 <?php
-require dirname(__DIR__) . '/app/Config/Paths.php';
-$paths = new Config\Paths(dirname(__DIR__));
+require __PROJECT_ROOT__ . '/app/Config/Paths.php';
+$paths = new Config\Paths(__PROJECT_ROOT__);
 require $paths->systemDirectory . '/bootstrap.php';
 require_once SYSTEMPATH . 'Config/DotEnv.php';
 (new CodeIgniter\Config\DotEnv(ROOTPATH))->load();
 class_exists(\EncryptedEnv\Bootstrap\EncryptedBoot::class);
-$expected = require dirname(__DIR__) . '/app/Config/BootstrapProbe.php';
+$expected = require __PROJECT_ROOT__ . '/app/Config/BootstrapProbe.php';
 $checks = [];
 foreach ($expected as $name => $value) {
     $checks[] = getenv($name) === $value
@@ -471,8 +498,12 @@ foreach ($expected as $name => $value) {
 }
 echo implode('|', array_map(static fn (bool $check): string => $check ? '1' : '0', $checks));
 PHP;
+            $webRootExpression = $webEntrypoint === 'index.php'
+                ? '__DIR__'
+                : 'dirname(__DIR__)';
+            $web = str_replace('__PROJECT_ROOT__', $webRootExpression, $web);
             file_put_contents($root . '/spark', $spark);
-            file_put_contents($root . '/public/index.php', $web);
+            file_put_contents($root . '/' . $webEntrypoint, $web);
 
             return;
         }
@@ -531,14 +562,18 @@ exit(Boot::bootSpark($paths));
 PHP;
         $web = <<<'PHP'
 <?php
-require dirname(__DIR__) . '/app/Config/Paths.php';
-$paths = new Config\Paths(dirname(__DIR__));
+require __PROJECT_ROOT__ . '/app/Config/Paths.php';
+$paths = new Config\Paths(__PROJECT_ROOT__);
 require $paths->systemDirectory . '/Boot.php';
 exit(Boot::bootWeb($paths));
 PHP;
+        $webRootExpression = $webEntrypoint === 'index.php'
+            ? '__DIR__'
+            : 'dirname(__DIR__)';
+        $web = str_replace('__PROJECT_ROOT__', $webRootExpression, $web);
 
         file_put_contents($root . '/spark', $spark);
-        file_put_contents($root . '/public/index.php', $web);
+        file_put_contents($root . '/' . $webEntrypoint, $web);
     }
 
     /**
@@ -548,8 +583,7 @@ PHP;
         string $entrypoint,
         string $workingDirectory,
         array $arguments = []
-    ): array
-    {
+    ): array {
         $process = proc_open(
             array_merge([
                 PHP_BINARY,
@@ -581,8 +615,11 @@ PHP;
     /**
      * @return array{string|false, string, int|null, string}
      */
-    private function executeWeb(string $workingDirectory, string $requestPath = '/'): array
-    {
+    private function executeWeb(
+        string $workingDirectory,
+        string $requestPath = '/',
+        string $entrypoint = 'public/index.php'
+    ): array {
         $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
         self::assertIsResource($socket, $errorMessage);
         $address = stream_socket_get_name($socket, false);
@@ -598,7 +635,7 @@ PHP;
                 'display_startup_errors=0',
                 '-S',
                 $address,
-                'public/index.php',
+                $entrypoint,
             ],
             [
                 0 => ['pipe', 'r'],

@@ -9,6 +9,12 @@ use EncryptedEnv\Env\MasterKeyResolver;
 
 final class ProjectInspector
 {
+    public function supportsCodeIgniterVersion(string $version): bool
+    {
+        return version_compare($version, '4.3.7', '>=')
+            && version_compare($version, '5.0.0', '<');
+    }
+
     /**
      * @return array<string, string|int|bool>
      */

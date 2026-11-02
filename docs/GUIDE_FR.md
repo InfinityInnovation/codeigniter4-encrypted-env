@@ -5,7 +5,7 @@
 **Package :** `infinityinnovationsdev/codeigniter4-encrypted-env`  
 **Version documentée :** v1.1.2 (préparation, non publiée)
 **Licence :** MIT  
-**Compatibilité ciblée par la matrice CI :** CodeIgniter 4.3.8 et la dernière version stable admise par `^4.3` (actuellement 4.7.6)
+**Compatibilité ciblée par la matrice CI :** CodeIgniter 4.3.7/4.3.8 sur PHP 8.1 et la dernière version stable admise par `^4.3` (actuellement 4.7.6) sur PHP 8.2–8.5
 
 ---
 
@@ -36,7 +36,7 @@ Avant de commencer, le développeur doit disposer de :
 - Un accès au terminal.
 - Les droits nécessaires pour modifier les fichiers du projet.
 
-**Compatibilité :** l'intégration prend en charge le bootstrap historique de CodeIgniter 4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Les versions intermédiaires ne sont pas toutes testées individuellement.
+**Compatibilité :** l'intégration prend en charge les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Les versions intermédiaires ne sont pas toutes testées individuellement.
 
 ## 3. Installer la bibliothèque
 
@@ -66,9 +66,9 @@ La bibliothèque fournit une commande d'installation :
 php spark encrypted-env:install
 ```
 
-Cette commande adapte `spark` et `public/index.php` au bootstrap détecté. Elle crée une sauvegarde `.encrypted-env.bak` pour chaque fichier modifié, restaure les fichiers d'origine en cas d'échec et peut être relancée sans écraser les sauvegardes.
+Cette commande adapte `spark` et le point d'entrée Web CodeIgniter reconnu dans `public/index.php` ou `index.php` à la racine. Si les deux fichiers contiennent un bootstrap CodeIgniter reconnu, les deux sont adaptés ; les wrappers et fichiers non reconnus restent intacts. Une sauvegarde `.encrypted-env.bak` est créée pour chaque fichier modifié ; les fichiers d'origine sont restaurés en cas d'échec et une nouvelle installation est idempotente.
 
-### CodeIgniter 4.3.8 : bootstrap historique
+### CodeIgniter 4.3.7/4.3.8 : bootstrap historique
 
 Dans cette version, `system/bootstrap.php` initialise le framework, puis `spark` et `public/index.php` chargent directement DotEnv. L'installateur remplace cet appel standard par le chargeur chiffré, avant l'initialisation de l'application :
 
@@ -208,6 +208,16 @@ SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /etc/mon-application-secrets/master.key
 
 Recharger Apache et réserver la lecture du fichier à l'administrateur de déploiement et au compte qui exécute PHP. `SetEnv` dans Apache ne configure pas automatiquement un processus PHP-FPM distinct.
 
+#### macOS avec MAMP
+
+Pour les commandes CLI, fournir le chemin de la clé de développement à la commande. Pour les requêtes HTTP avec le module Apache de MAMP, définir le chemin dans le VirtualHost du site et redémarrer MAMP :
+
+```apache
+SetEnv ENCRYPTED_ENV_MASTER_KEY_FILE /Users/votre-compte/.config/encrypted-env/development.key
+```
+
+Si MAMP transmet PHP à un processus PHP-FPM/FastCGI séparé, configurer la variable dans l'environnement de ce processus. Un export dans le terminal ou `SetEnv` n'est pas automatiquement hérité par un worker séparé. Conserver le fichier de clé hors du projet avec des permissions limitées au compte de développement.
+
 #### Windows Server : IIS et PHP-FastCGI
 
 Dans IIS Manager, ouvrir **FastCGI Settings**, sélectionner l'exécutable PHP puis modifier **Environment Variables** :
@@ -281,7 +291,7 @@ Toutes les commandes suivantes s'exécutent depuis la racine du projet CodeIgnit
 
 | Commande | Fonction |
 |---|---|
-| `php spark encrypted-env:install` | Installe le chargement DotEnv chiffré dans `spark` et `public/index.php`; relançable sans écraser les sauvegardes. |
+| `php spark encrypted-env:install` | Installe le chargement DotEnv chiffré dans `spark` et les points d'entrée reconnus `public/index.php` ou `index.php` à la racine ; relançable sans écraser les sauvegardes. |
 | `php spark encrypted-env:status` | Résume les versions, le bootstrap, `.env`, le nombre de variables chiffrées et l'état de la clé. |
 | `php spark encrypted-env:doctor` | Vérifie PHP/OpenSSL, Composer, CodeIgniter/bootstrap, la clé et l'intégrité des valeurs chiffrées. |
 | `php spark encrypted-env:key:generate --path=/chemin/externe/master.key` | Génère une clé aléatoire de 32 octets dans un fichier protégé; refuse l'écrasement sans `--force`. |
@@ -485,7 +495,6 @@ Les tests fonctionnels suivants ont été réalisés avec CodeIgniter 4.7.6 :
 | Résolution de clé depuis un fichier externe | Validé par tests PHPUnit |
 | CLI : installation, statut, diagnostic, clés, rotation, chiffrement et restauration | Validé par tests PHPUnit |
 | Sauvegardes protégées et restauration | Validé par tests PHPUnit |
-| Intégration CI 4.3.8 CLI / HTTP | Suite complète exécutée sur le framework 4.3.8 avec PHP 8.5 |
 | Intégration CI 4.7.6 CLI / HTTP | Vérifiée sur projet isolé |
 | Intégration du bootstrap CLI | Validé |
 | Intégration du bootstrap web | Validé |
@@ -493,10 +502,12 @@ Les tests fonctionnels suivants ont été réalisés avec CodeIgniter 4.7.6 :
 | Démarrage de CodeIgniter avec `.env` chiffré | Validé |
 | Déchiffrement de plusieurs variables et accès HTTP de contrôle | Validé |
 | Compatibilité CodeIgniter 4.2 | Non ciblée |
-| Compatibilité CodeIgniter 4.3.8 | 57 tests et 246 assertions sur PHP 8.5 ; matrice CI PHP 8.1 configurée, non exécutée ici |
-| Compatibilité CodeIgniter 4.7.6 | 57 tests et 246 assertions sur PHP 8.5 |
+| Compatibilité CodeIgniter 4.3.7/4.3.8 | Jobs PHP 8.1 configurés ; exécution GitHub Actions à confirmer |
+| Compatibilité CodeIgniter 4.7.6 | 73 tests et 333 assertions sur PHP 8.5 |
 | Matrice GitHub Actions PHP 8.1–8.5 | Configurée ; exécution CI distante non confirmée |
 | Validation complète en production | À réaliser |
+
+Une tentative locale d'exécution de CodeIgniter 4.3.7 avec PHP 8.5 échoue dans le framework lui-même : sa méthode `Time::createFromTimestamp()` est incompatible avec la signature apparue dans `DateTimeImmutable` en PHP 8.5. Le job dédié utilise PHP 8.1, et doit être confirmé dans GitHub Actions ; cette ancienne version ne doit pas être utilisée en production.
 
 ## 16. Ressources
 

@@ -17,11 +17,13 @@ class CodeIgniterInstaller
     {
         $results = [];
         $pending = [];
+        $entrypoints = ['spark' => 'bootSpark'];
 
-        foreach ([
-            'spark' => 'bootSpark',
-            'public/index.php' => 'bootWeb',
-        ] as $file => $method) {
+        foreach ($this->webEntrypoints($projectRoot) as $file) {
+            $entrypoints[$file] = 'bootWeb';
+        }
+
+        foreach ($entrypoints as $file => $method) {
             $path = rtrim($projectRoot, '/\\') . '/' . $file;
 
             if (!is_file($path) || !is_readable($path) || !is_writable($path)) {
@@ -46,7 +48,7 @@ class CodeIgniterInstaller
 
             $autoload = $file === 'spark'
                 ? "require_once __DIR__ . '/vendor/autoload.php';"
-                : "require_once dirname(__DIR__) . '/vendor/autoload.php';";
+                : $this->webAutoloadStatement($file);
 
             if (substr_count($original, $target) === 1) {
                 $replacement = 'exit(\\EncryptedEnv\\Bootstrap\\EncryptedBoot::'
@@ -55,7 +57,11 @@ class CodeIgniterInstaller
                     . '/src/Bootstrap/EncryptedBoot.php';
                 $bootClass = $file === 'spark'
                     ? "require_once __DIR__ . '/{$bootClassPath}';"
-                    : "require_once dirname(__DIR__) . '/{$bootClassPath}';";
+                    : str_replace(
+                        '/vendor/autoload.php',
+                        '/' . $bootClassPath,
+                        $autoload
+                    );
 
                 $updated = str_replace($target, $replacement, $original);
 
@@ -164,5 +170,61 @@ class CodeIgniterInstaller
         }
 
         return $results;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function webEntrypoints(string $projectRoot): array
+    {
+        $entrypoints = [];
+        $foundWebFile = false;
+
+        foreach (['public/index.php', 'index.php'] as $file) {
+            $path = rtrim($projectRoot, '/\\') . '/' . $file;
+
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $foundWebFile = true;
+            $contents = file_get_contents($path);
+
+            if ($contents === false) {
+                throw new RuntimeException("Cannot read: {$file}");
+            }
+
+            if (
+                str_contains($contents, 'exit(Boot::bootWeb($paths));')
+                || str_contains(
+                    $contents,
+                    '(new CodeIgniter\\Config\\DotEnv(ROOTPATH))->load();'
+                )
+                || str_contains(
+                    $contents,
+                    '\\EncryptedEnv\\Bootstrap\\EncryptedBoot::bootWeb'
+                )
+                || str_contains($contents, '\\EncryptedEnv\\Env\\EncryptedDotEnv')
+            ) {
+                $entrypoints[] = $file;
+            }
+        }
+
+        if ($entrypoints === []) {
+            $reason = $foundWebFile
+                ? 'No supported CodeIgniter web bootstrap found in public/index.php or index.php.'
+                : 'No web entrypoint found in public/index.php or index.php.';
+
+            throw new RuntimeException($reason);
+        }
+
+        return $entrypoints;
+    }
+
+    private function webAutoloadStatement(string $file): string
+    {
+        return $file === 'public/index.php'
+            ? "require_once dirname(__DIR__) . '/vendor/autoload.php';"
+            : "require_once __DIR__ . '/vendor/autoload.php';";
     }
 }
