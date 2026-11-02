@@ -8,3 +8,4 @@ vendor/
 .phpunit.result.cache
 
 /bin/encrypted-env.backup
+/app/Config/EncryptedEnv.local.php

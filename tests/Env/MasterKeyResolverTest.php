@@ -34,6 +34,9 @@ final class MasterKeyResolverTest extends TestCase
     {
         @chmod($this->directory . '/master.key', 0600);
         @unlink($this->directory . '/master.key');
+        @unlink($this->directory . '/app/Config/EncryptedEnv.local.php');
+        @rmdir($this->directory . '/app/Config');
+        @rmdir($this->directory . '/app');
         @rmdir($this->directory);
 
         foreach ($this->previousEnvironment as $name => $values) {
@@ -213,5 +216,69 @@ final class MasterKeyResolverTest extends TestCase
         $_SERVER['ENCRYPTED_ENV_MASTER_KEY'] = base64_encode($key);
 
         self::assertSame($key, (new MasterKeyResolver())->resolve());
+    }
+
+    public function testLoadsKeyFromExplicitLocalPhpConfiguration(): void
+    {
+        $key = random_bytes(32);
+        $keyPath = $this->directory . '/master.key';
+        file_put_contents($keyPath, base64_encode($key) . PHP_EOL);
+        $this->writeLocalConfiguration($keyPath);
+
+        $resolver = new MasterKeyResolver($this->directory);
+
+        self::assertTrue($resolver->hasConfiguredKey());
+        self::assertSame($key, $resolver->resolve());
+        self::assertSame(
+            ['source' => 'local', 'path' => $keyPath],
+            $resolver->configurationSource()
+        );
+    }
+
+    public function testEnvironmentConfigurationTakesPriorityOverLocalConfiguration(): void
+    {
+        $localKey = random_bytes(32);
+        $environmentKey = random_bytes(32);
+        $keyPath = $this->directory . '/master.key';
+        file_put_contents($keyPath, base64_encode($localKey));
+        $this->writeLocalConfiguration($keyPath);
+        putenv('ENCRYPTED_ENV_MASTER_KEY=' . base64_encode($environmentKey));
+
+        self::assertSame(
+            $environmentKey,
+            (new MasterKeyResolver($this->directory))->resolve()
+        );
+    }
+
+    public function testInvalidLocalConfigurationFailsExplicitly(): void
+    {
+        $this->writeLocalConfiguration('relative/master.key');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('absolute master_key_file path');
+
+        (new MasterKeyResolver($this->directory))->resolve();
+    }
+
+    private function writeLocalConfiguration(string $keyPath): void
+    {
+        $configurationDirectory = $this->directory . '/app/Config';
+        mkdir($configurationDirectory, 0700, true);
+        $configuration = <<<'PHP'
+<?php
+if (
+    ! defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')
+    || realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)
+) {
+    http_response_code(404);
+    exit;
+}
+
+return ['master_key_file' => __KEY_PATH__];
+PHP;
+        file_put_contents(
+            $configurationDirectory . '/EncryptedEnv.local.php',
+            str_replace('__KEY_PATH__', var_export($keyPath, true), $configuration)
+        );
     }
 }

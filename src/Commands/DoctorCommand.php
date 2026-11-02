@@ -26,7 +26,7 @@ final class DoctorCommand extends EncryptedEnvCommand
             $root = $this->projectRoot();
             $inspector = new ProjectInspector();
             $status = $inspector->inspect($root);
-            $keyStatus = (new MasterKeyFile())->check(new MasterKeyResolver());
+            $keyStatus = (new MasterKeyFile())->check(new MasterKeyResolver($root));
             $spark = is_file($root . DIRECTORY_SEPARATOR . 'spark')
                 ? file_get_contents($root . DIRECTORY_SEPARATOR . 'spark')
                 : false;

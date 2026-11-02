@@ -9,6 +9,7 @@ use EncryptedEnv\Crypto\AesGcmCipher;
 
 final class EncryptedDotEnv extends DotEnv
 {
+    private string $projectRoot;
     private ?AesGcmCipher $cipher = null;
 
     public function __construct(
@@ -16,8 +17,9 @@ final class EncryptedDotEnv extends DotEnv
         ?string $masterKey = null
     ) {
         parent::__construct($path);
+        $this->projectRoot = rtrim($path, '/\\');
 
-        $resolver = new MasterKeyResolver();
+        $resolver = new MasterKeyResolver($this->projectRoot);
 
         if ($resolver->hasConfiguredKey($masterKey)) {
             $this->cipher = new AesGcmCipher(
@@ -30,7 +32,7 @@ final class EncryptedDotEnv extends DotEnv
     {
         if (str_starts_with($value, 'enc:v1:')) {
             $this->cipher ??= new AesGcmCipher(
-                (new MasterKeyResolver())->resolve()
+                (new MasterKeyResolver($this->projectRoot))->resolve()
             );
 
             $value = $this->cipher->decrypt($value);

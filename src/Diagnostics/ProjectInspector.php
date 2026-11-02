@@ -28,7 +28,7 @@ final class ProjectInspector
         $spark = is_file($sparkPath) ? file_get_contents($sparkPath) : false;
         $web = is_file($webPath) ? file_get_contents($webPath) : false;
         $bootstrap = $this->bootstrapStatus($root, $spark, $web);
-        $key = (new MasterKeyFile())->check(new MasterKeyResolver());
+        $key = (new MasterKeyFile())->check(new MasterKeyResolver($root));
         $composer = $this->composerStatus($root);
 
         return [

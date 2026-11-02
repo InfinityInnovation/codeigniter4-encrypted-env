@@ -16,10 +16,12 @@ final class KeyCheckCommand extends EncryptedEnvCommand
     public function run(array $params)
     {
         return $this->executeSafely(function (): int {
-            $check = (new MasterKeyFile())->check(new MasterKeyResolver());
+            $check = (new MasterKeyFile())->check(
+                new MasterKeyResolver($this->projectRoot())
+            );
             CLI::write('Resolution source: ' . $check['source']);
 
-            if ($check['source'] === 'file') {
+            if (in_array($check['source'], ['file', 'local'], true)) {
                 CLI::write('Key file: ' . ($check['path'] ?? '(empty path)'));
                 CLI::write(
                     'File accessibility: '
