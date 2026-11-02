@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use EncryptedEnv\Crypto\AesGcmCipher;
 use EncryptedEnv\Env\EncryptedDotEnv;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class EncryptedDotEnvTest extends TestCase
@@ -45,6 +46,7 @@ final class EncryptedDotEnvTest extends TestCase
             'TEST_ENCRYPTED_VALUE',
             'TEST_ENCRYPTED_SECOND',
             'TEST_ENCRYPTED_NESTED',
+            'TEST_ENCRYPTED_WITH_ENV_KEY',
             'TEST_PLAIN_VALUE',
             'TEST_SYSTEM_PRIORITY',
         ] as $name) {
@@ -142,6 +144,152 @@ final class EncryptedDotEnvTest extends TestCase
             'hello',
             getenv('TEST_PLAIN_VALUE')
         );
+    }
+
+    public function testPlainEnvCanLoadBeforeAnyMasterKeyHasBeenGenerated(): void
+    {
+        $this->writeEnv("TEST_PLAIN_VALUE=available-before-key-generation\n");
+
+        (new EncryptedDotEnv($this->directory))->load();
+
+        self::assertSame(
+            'available-before-key-generation',
+            getenv('TEST_PLAIN_VALUE')
+        );
+    }
+
+    public function testEncryptedValueCannotLoadWithoutAMasterKey(): void
+    {
+        $cipher = new AesGcmCipher($this->key);
+        $this->writeEnv(
+            'TEST_ENCRYPTED_WITH_ENV_KEY=' . $cipher->encrypt('must-not-load') . PHP_EOL
+        );
+
+        try {
+            (new EncryptedDotEnv($this->directory))->load();
+            self::fail('An encrypted value was loaded without a master key.');
+        } catch (RuntimeException $exception) {
+            self::assertStringContainsString(
+                'Missing ENCRYPTED_ENV_MASTER_KEY_FILE or ENCRYPTED_ENV_MASTER_KEY.',
+                $exception->getMessage()
+            );
+        }
+
+        self::assertFalse(getenv('TEST_ENCRYPTED_WITH_ENV_KEY'));
+        self::assertArrayNotHasKey('TEST_ENCRYPTED_WITH_ENV_KEY', $_ENV);
+        self::assertArrayNotHasKey('TEST_ENCRYPTED_WITH_ENV_KEY', $_SERVER);
+    }
+
+    #[DataProvider('masterKeyEnvironmentSources')]
+    public function testEncryptedValueLoadsWithValidKeyFromEachEnvironmentSource(
+        string $source
+    ): void {
+        $cipher = new AesGcmCipher($this->key);
+        $this->writeEnv(
+            'TEST_ENCRYPTED_WITH_ENV_KEY=' . $cipher->encrypt('decrypted-value') . PHP_EOL
+        );
+        $this->configureMasterKeySource($source, base64_encode($this->key));
+
+        (new EncryptedDotEnv($this->directory))->load();
+
+        self::assertSame('decrypted-value', getenv('TEST_ENCRYPTED_WITH_ENV_KEY'));
+        self::assertSame('decrypted-value', $_ENV['TEST_ENCRYPTED_WITH_ENV_KEY'] ?? null);
+        self::assertSame('decrypted-value', $_SERVER['TEST_ENCRYPTED_WITH_ENV_KEY'] ?? null);
+    }
+
+    #[DataProvider('masterKeyEnvironmentSources')]
+    public function testEncryptedValueRejectsInvalidKeyFromEachEnvironmentSource(
+        string $source
+    ): void {
+        $cipher = new AesGcmCipher($this->key);
+        $this->writeEnv(
+            'TEST_ENCRYPTED_WITH_ENV_KEY=' . $cipher->encrypt('must-not-load') . PHP_EOL
+        );
+        $this->configureMasterKeySource($source, 'invalid-base64%%%');
+
+        try {
+            (new EncryptedDotEnv($this->directory))->load();
+            self::fail('An encrypted value was loaded with an invalid master key.');
+        } catch (RuntimeException $exception) {
+            self::assertStringContainsString(
+                'Invalid master key',
+                $exception->getMessage()
+            );
+        }
+
+        self::assertFalse(getenv('TEST_ENCRYPTED_WITH_ENV_KEY'));
+        self::assertArrayNotHasKey('TEST_ENCRYPTED_WITH_ENV_KEY', $_ENV);
+        self::assertArrayNotHasKey('TEST_ENCRYPTED_WITH_ENV_KEY', $_SERVER);
+    }
+
+    public function testEncryptedValueRejectsAKeyWithTheWrongDecodedLength(): void
+    {
+        $cipher = new AesGcmCipher($this->key);
+        $this->writeEnv(
+            'TEST_ENCRYPTED_WITH_ENV_KEY=' . $cipher->encrypt('must-not-load') . PHP_EOL
+        );
+        $this->configureMasterKeySource('getenv', base64_encode(random_bytes(31)));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('exactly 32 bytes');
+
+        (new EncryptedDotEnv($this->directory))->load();
+    }
+
+    #[DataProvider('invalidServerKeySources')]
+    public function testPlainEnvRejectsAnInvalidConfiguredKeyFromSuperglobal(
+        string $source
+    ): void {
+        $this->writeEnv("TEST_PLAIN_VALUE=must-not-load\n");
+        $this->configureMasterKeySource($source, 'invalid-base64%%%');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Invalid master key');
+
+        new EncryptedDotEnv($this->directory);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidServerKeySources(): array
+    {
+        return [
+            '$_ENV only' => ['_ENV'],
+            '$_SERVER only' => ['_SERVER'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function masterKeyEnvironmentSources(): array
+    {
+        return [
+            'getenv()' => ['getenv'],
+            '$_ENV' => ['_ENV'],
+            '$_SERVER' => ['_SERVER'],
+        ];
+    }
+
+    private function configureMasterKeySource(string $source, string $value): void
+    {
+        switch ($source) {
+            case 'getenv':
+                putenv('ENCRYPTED_ENV_MASTER_KEY=' . $value);
+                break;
+
+            case '_ENV':
+                $_ENV['ENCRYPTED_ENV_MASTER_KEY'] = $value;
+                break;
+
+            case '_SERVER':
+                $_SERVER['ENCRYPTED_ENV_MASTER_KEY'] = $value;
+                break;
+
+            default:
+                self::fail('Unsupported master-key environment source.');
+        }
     }
 
     public function testSystemVariableHasPriority(): void

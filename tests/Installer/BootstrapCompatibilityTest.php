@@ -18,7 +18,7 @@ final class BootstrapCompatibilityTest extends TestCase
         $this->assertBootstrapsDecryptBeforeUse('modern');
     }
 
-    public function testInstalledFrameworkCliAndWebEntrypointsLoadDotEnvBeforeBoot(): void
+    public function testInstalledFrameworkCanGenerateItsInitialKeyAndLoadEncryptedDotEnv(): void
     {
         $framework = dirname(__DIR__, 2) . '/vendor/codeigniter4/framework';
         $root = sys_get_temp_dir() . '/encrypted-env-' . bin2hex(random_bytes(8));
@@ -78,17 +78,6 @@ PHP
 
         copy($framework . '/spark', $root . '/spark');
         copy($framework . '/public/index.php', $root . '/public/index.php');
-        $cipher = new AesGcmCipher($key);
-        $envContent = 'CI_ENVIRONMENT=' . $cipher->encrypt('development') . PHP_EOL;
-
-        foreach ($probeValues as $name => $value) {
-            $envContent .= $name . '=' . $cipher->encrypt($value) . PHP_EOL;
-        }
-
-        file_put_contents($root . '/.env', $envContent);
-        chmod($root . '/.env', 0600);
-        file_put_contents($keyPath, base64_encode($key) . PHP_EOL);
-        chmod($keyPath, 0600);
 
         file_put_contents(
             $root . '/app/Controllers/EncryptedEnvProbe.php',
@@ -143,7 +132,7 @@ PHP
             unset($_SERVER[$name], $_ENV[$name]);
         }
 
-        putenv('ENCRYPTED_ENV_MASTER_KEY_FILE=' . $keyPath);
+        putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
         putenv('ENCRYPTED_ENV_MASTER_KEY');
         putenv('CI_ENVIRONMENT');
 
@@ -152,6 +141,31 @@ PHP
 
             self::assertSame('installed', $results['spark']);
             self::assertSame('installed', $results['public/index.php']);
+
+            [$exitCode, $output, $error] = $this->execute(
+                $root . '/spark',
+                $root,
+                ['encrypted-env:key:generate', '--path=' . $keyPath]
+            );
+            self::assertSame(0, $exitCode, $error . $output);
+            self::assertFileExists($keyPath);
+            $encodedKey = trim((string) file_get_contents($keyPath));
+            self::assertNotFalse(base64_decode($encodedKey, true));
+            $key = base64_decode($encodedKey, true);
+            self::assertIsString($key);
+            self::assertSame(32, strlen($key));
+            self::assertStringNotContainsString($encodedKey, $output . $error);
+
+            $cipher = new AesGcmCipher($key);
+            $envContent = 'CI_ENVIRONMENT=' . $cipher->encrypt('development') . PHP_EOL;
+
+            foreach ($probeValues as $name => $value) {
+                $envContent .= $name . '=' . $cipher->encrypt($value) . PHP_EOL;
+            }
+
+            file_put_contents($root . '/.env', $envContent);
+            chmod($root . '/.env', 0600);
+            putenv('ENCRYPTED_ENV_MASTER_KEY_FILE=' . $keyPath);
 
             [$exitCode, $output, $error] = $this->execute(
                 $root . '/spark',
@@ -530,17 +544,21 @@ PHP;
     /**
      * @return array{int, string, string}
      */
-    private function execute(string $entrypoint, string $workingDirectory): array
+    private function execute(
+        string $entrypoint,
+        string $workingDirectory,
+        array $arguments = []
+    ): array
     {
         $process = proc_open(
-            [
+            array_merge([
                 PHP_BINARY,
                 '-d',
                 'display_errors=0',
                 '-d',
                 'display_startup_errors=0',
                 $entrypoint,
-            ],
+            ], $arguments),
             [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
