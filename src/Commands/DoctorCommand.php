@@ -24,7 +24,8 @@ final class DoctorCommand extends EncryptedEnvCommand
     {
         return $this->executeSafely(function (): int {
             $root = $this->projectRoot();
-            $status = (new ProjectInspector())->inspect($root);
+            $inspector = new ProjectInspector();
+            $status = $inspector->inspect($root);
             $keyStatus = (new MasterKeyFile())->check(new MasterKeyResolver());
             $spark = is_file($root . DIRECTORY_SEPARATOR . 'spark')
                 ? file_get_contents($root . DIRECTORY_SEPARATOR . 'spark')
@@ -43,8 +44,9 @@ final class DoctorCommand extends EncryptedEnvCommand
                 [
                     'CodeIgniter compatibility',
                     $status['codeigniter_version'] !== 'unavailable'
-                    && version_compare((string) $status['codeigniter_version'], '4.3.8', '>=')
-                    && version_compare((string) $status['codeigniter_version'], '5.0.0', '<'),
+                    && $inspector->supportsCodeIgniterVersion(
+                        (string) $status['codeigniter_version']
+                    ),
                 ],
                 ['CLI bootstrap', $this->usesEncryptedBootstrap($spark, 'bootSpark')],
                 ['HTTP bootstrap', $this->usesEncryptedBootstrap($web, 'bootWeb')],
