@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use EncryptedEnv\Installer\CodeIgniterInstaller;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
+
 final class InstallerWriteFailureTest extends TestCase
 {
     public function testRollbackAfterWriteFailure(): void

@@ -32,14 +32,23 @@ final class EnvFileManagerTest extends TestCase
 
             self::assertStringContainsString('enc:v1:', $encrypted);
             self::assertStringNotContainsString('secret123', $encrypted);
-            self::assertSame(0600, fileperms($path) & 0777);
+            if (DIRECTORY_SEPARATOR !== '\\') {
+                self::assertSame(0600, fileperms($path) & 0777);
+            }
 
-            $backups = glob($directory . '/.encrypted-env-backup-*');
-            self::assertCount(0, $backups);
+            $backups = glob($path . '.encrypted-env-encrypt-*.bak');
+            self::assertCount(1, $backups);
+            if (DIRECTORY_SEPARATOR !== '\\') {
+                self::assertSame(0600, fileperms($backups[0]) & 0777);
+            }
 
             $manager->process($path, false);
 
             self::assertSame($original, file_get_contents($path));
+            if (DIRECTORY_SEPARATOR !== '\\') {
+                self::assertSame(0600, fileperms($path) & 0777);
+            }
+            self::assertCount(1, glob($path . '.encrypted-env-decrypt-*.bak') ?: []);
         } finally {
             foreach (glob($directory . '/.*') ?: [] as $file) {
                 if (is_file($file)) {

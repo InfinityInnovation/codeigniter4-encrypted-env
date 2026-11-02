@@ -6,7 +6,6 @@ namespace EncryptedEnv\Env;
 
 use CodeIgniter\Config\DotEnv;
 use EncryptedEnv\Crypto\AesGcmCipher;
-use RuntimeException;
 
 final class EncryptedDotEnv extends DotEnv
 {
@@ -16,19 +15,9 @@ final class EncryptedDotEnv extends DotEnv
     {
         parent::__construct($path);
 
-        $encodedKey = $masterKey ?? getenv('ENCRYPTED_ENV_MASTER_KEY');
-
-        if (!is_string($encodedKey) || $encodedKey === '') {
-            throw new RuntimeException('Missing ENCRYPTED_ENV_MASTER_KEY.');
-        }
-
-        $key = base64_decode($encodedKey, true);
-
-        if ($key === false || strlen($key) !== 32) {
-            throw new RuntimeException('Invalid master key. Expected 32 bytes encoded in Base64.');
-        }
-
-        $this->cipher = new AesGcmCipher($key);
+        $this->cipher = new AesGcmCipher(
+            (new MasterKeyResolver())->resolve($masterKey)
+        );
     }
 
     protected function setVariable(string $name, string $value = ''): void

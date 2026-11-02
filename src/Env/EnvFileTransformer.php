@@ -9,6 +9,16 @@ use RuntimeException;
 
 final class EnvFileTransformer
 {
+    private const UNENCRYPTED_VARIABLES = [
+        'CI_ENVIRONMENT',
+        'PATH',
+        'HOME',
+        'USER',
+        'SHELL',
+        'PWD',
+        'TMPDIR',
+    ];
+
     public function __construct(
         private readonly AesGcmCipher $cipher
     ) {
@@ -75,6 +85,10 @@ final class EnvFileTransformer
 
                 $plainValue = $quoted ? substr($value, 1, -1) : $value;
 
+                if ($encrypt && in_array($this->variableName($prefix), self::UNENCRYPTED_VARIABLES, true)) {
+                    return $matches[0];
+                }
+
                 if ($encrypt) {
                     if (str_starts_with($plainValue, 'enc:v1:')) {
                         return $matches[0];
@@ -97,5 +111,14 @@ final class EnvFileTransformer
             },
             $content
         ) ?? throw new RuntimeException('Unable to transform environment file.');
+    }
+
+    private function variableName(string $prefix): string
+    {
+        $separator = strpos($prefix, '=');
+
+        return $separator === false
+            ? trim($prefix)
+            : trim(substr($prefix, 0, $separator));
     }
 }

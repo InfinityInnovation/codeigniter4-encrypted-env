@@ -32,6 +32,20 @@ final class AesGcmSecurityTest extends TestCase
         $second->decrypt($encrypted);
     }
 
+    public function testModifiedAuthenticationTagIsRejected(): void
+    {
+        $cipher = new AesGcmCipher(random_bytes(32));
+        $encrypted = $cipher->encrypt('synthetic-authentication-fixture');
+        $payload = base64_decode(substr($encrypted, 7), true);
+        self::assertIsString($payload);
+        $payload[12] = chr(ord($payload[12]) ^ 1);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Decryption failed.');
+
+        $cipher->decrypt('enc:v1:' . base64_encode($payload));
+    }
+
     public function testInvalidPayloadIsRejected(): void
     {
         $cipher = new AesGcmCipher(random_bytes(32));

@@ -34,41 +34,65 @@ class CodeIgniterInstaller
                 throw new RuntimeException("Cannot read: {$file}");
             }
 
-            if (str_contains($original, '\\EncryptedEnv\\Bootstrap\\EncryptedBoot::' . $method)) {
+            if (
+                str_contains($original, '\\EncryptedEnv\\Bootstrap\\EncryptedBoot::' . $method)
+                || str_contains($original, '\\EncryptedEnv\\Env\\EncryptedDotEnv')
+            ) {
                 $results[$file] = 'already installed';
                 continue;
             }
 
             $target = 'exit(Boot::' . $method . '($paths));';
 
-            if (substr_count($original, $target) !== 1) {
-                throw new RuntimeException(
-                    "Unsupported or customized bootstrap in {$file}; no changes made."
-                );
-            }
-
-            $replacement = 'exit(\\EncryptedEnv\\Bootstrap\\EncryptedBoot::'
-                . $method . '($paths));';
-
-            $updated = str_replace($target, $replacement, $original);
-
             $autoload = $file === 'spark'
                 ? "require_once __DIR__ . '/vendor/autoload.php';"
                 : "require_once dirname(__DIR__) . '/vendor/autoload.php';";
 
-            if (!str_contains($updated, $autoload)) {
-                $bootLine = 'require $paths->systemDirectory . \'/Boot.php\';';
+            if (substr_count($original, $target) === 1) {
+                $replacement = 'exit(\\EncryptedEnv\\Bootstrap\\EncryptedBoot::'
+                    . $method . '($paths));';
+                $bootClassPath = 'vendor/infinityinnovationsdev/codeigniter4-encrypted-env'
+                    . '/src/Bootstrap/EncryptedBoot.php';
+                $bootClass = $file === 'spark'
+                    ? "require_once __DIR__ . '/{$bootClassPath}';"
+                    : "require_once dirname(__DIR__) . '/{$bootClassPath}';";
 
-                if (substr_count($updated, $bootLine) !== 1) {
+                $updated = str_replace($target, $replacement, $original);
+
+                if (!str_contains($updated, $bootClass)) {
+                    $bootLine = 'require $paths->systemDirectory . \'/Boot.php\';';
+
+                    if (substr_count($updated, $bootLine) !== 1) {
+                        throw new RuntimeException(
+                            "Cannot locate framework bootstrap in {$file}."
+                        );
+                    }
+
+                    $updated = str_replace(
+                        $bootLine,
+                        $bootLine . PHP_EOL . $bootClass,
+                        $updated
+                    );
+                }
+            } else {
+                $legacyTarget = '(new CodeIgniter\\Config\\DotEnv(ROOTPATH))->load();';
+
+                if (substr_count($original, $legacyTarget) !== 1) {
                     throw new RuntimeException(
-                        "Cannot locate framework bootstrap in {$file}."
+                        "Unsupported or customized bootstrap in {$file}; no changes made."
                     );
                 }
 
+                $legacyReplacement = '(new \\EncryptedEnv\\Env\\EncryptedDotEnv(ROOTPATH))->load();';
+
+                if (!str_contains($original, $autoload)) {
+                    $legacyReplacement = $autoload . PHP_EOL . $legacyReplacement;
+                }
+
                 $updated = str_replace(
-                    $bootLine,
-                    $bootLine . PHP_EOL . $autoload,
-                    $updated
+                    $legacyTarget,
+                    $legacyReplacement,
+                    $original
                 );
             }
 

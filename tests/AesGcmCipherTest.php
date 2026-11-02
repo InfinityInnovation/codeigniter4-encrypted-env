@@ -22,6 +22,11 @@ final class AesGcmCipherTest extends TestCase
         self::assertStringStartsWith('enc:v1:', $encrypted);
         self::assertNotSame($original, $encrypted);
         self::assertSame($original, $cipher->decrypt($encrypted));
+
+        $payload = base64_decode(substr($encrypted, 7), true);
+        self::assertIsString($payload);
+        self::assertSame(12, strlen(substr($payload, 0, 12)));
+        self::assertSame(16, strlen(substr($payload, 12, 16)));
     }
 
     public function testRandomIvProducesDifferentResults(): void
@@ -32,6 +37,12 @@ final class AesGcmCipherTest extends TestCase
         $second = $cipher->encrypt('same-value');
 
         self::assertNotSame($first, $second);
+
+        $firstPayload = base64_decode(substr($first, 7), true);
+        $secondPayload = base64_decode(substr($second, 7), true);
+        self::assertIsString($firstPayload);
+        self::assertIsString($secondPayload);
+        self::assertNotSame(substr($firstPayload, 0, 12), substr($secondPayload, 0, 12));
     }
 
     public function testPlaintextRemainsUnchanged(): void

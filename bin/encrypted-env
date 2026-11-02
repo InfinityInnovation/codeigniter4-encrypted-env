@@ -1,7 +1,7 @@
 <?php
+
 declare(strict_types=1);
 
-// Compatible avec le développement local et Composer.
 $autoloadPaths = [
     __DIR__ . '/../vendor/autoload.php',
     dirname(__DIR__, 3) . '/autoload.php',
@@ -26,6 +26,7 @@ require_once $autoload;
 use EncryptedEnv\Crypto\AesGcmCipher;
 use EncryptedEnv\Env\EnvFileManager;
 use EncryptedEnv\Env\EnvFileTransformer;
+use EncryptedEnv\Env\MasterKeyResolver;
 
 function fail(string $message): never
 {
@@ -35,27 +36,37 @@ function fail(string $message): never
 
 $command = $argv[1] ?? null;
 
-if (!in_array($command, ['encrypt', 'encrypt-file', 'decrypt-file'], true)) {
-    fail('Usage: encrypted-env encrypt|encrypt-file|decrypt-file');
+if (! in_array($command, ['encrypt', 'encrypt-file', 'decrypt-file'], true)) {
+    fail('Usage: encrypted-env encrypt|encrypt-file|decrypt-file [--file=PATH] [--yes]');
 }
 
-if (isset($argv[2])) {
-    fail('Do not pass secrets as command-line arguments.');
+$file = null;
+$confirmed = false;
+
+for ($index = 2; $index < count($argv); $index++) {
+    $argument = $argv[$index];
+
+    if ($argument === '--yes') {
+        $confirmed = true;
+    } elseif (str_starts_with($argument, '--file=')) {
+        $file = substr($argument, strlen('--file='));
+    } elseif ($argument === '--file') {
+        $file = $argv[++$index] ?? null;
+
+        if (! is_string($file) || $file === '' || str_starts_with($file, '--')) {
+            fail('The --file option requires a file path.');
+        }
+    } else {
+        fail('Unknown option. Do not pass secrets as command-line arguments.');
+    }
 }
 
-$encodedKey = getenv('ENCRYPTED_ENV_MASTER_KEY');
-
-if (!is_string($encodedKey) || $encodedKey === '') {
-    fail('Missing ENCRYPTED_ENV_MASTER_KEY.');
+try {
+    $key = (new MasterKeyResolver())->resolve();
+} catch (Throwable $exception) {
+    fail($exception->getMessage());
 }
 
-$key = base64_decode($encodedKey, true);
-
-if ($key === false || strlen($key) !== 32) {
-    fail('Invalid master key. Expected a Base64-encoded 32-byte key.');
-}
-
-// Encrypt or decrypt the project's .env file.
 if ($command === 'encrypt-file' || $command === 'decrypt-file') {
     try {
         $cwd = getcwd();
@@ -64,26 +75,41 @@ if ($command === 'encrypt-file' || $command === 'decrypt-file') {
             fail('Unable to determine the working directory.');
         }
 
-        $path = $cwd . DIRECTORY_SEPARATOR . '.env';
+        $path = $file ?? $cwd . DIRECTORY_SEPARATOR . '.env';
 
-        if (!is_file($path)) {
-            fail('.env file not found in the current directory.');
+        if (
+            ! str_starts_with($path, DIRECTORY_SEPARATOR)
+            && preg_match('/^[A-Za-z]:[\\\\\/]/', $path) !== 1
+            && ! str_starts_with($path, '\\\\')
+        ) {
+            $path = $cwd . DIRECTORY_SEPARATOR . $path;
         }
 
-        if (!is_readable($path)) {
-            fail('.env file is not readable.');
+        if (is_link($path) || ! is_file($path)) {
+            fail('The .env file is missing or is not a regular file.');
+        }
+
+        if (! is_readable($path) || ! is_writable($path)) {
+            fail('The .env file is not accessible.');
+        }
+
+        if ($command === 'decrypt-file' && ! $confirmed) {
+            if (! function_exists('stream_isatty') || ! stream_isatty(STDIN)) {
+                fail('Decryption requires explicit confirmation. Pass --yes.');
+            }
+
+            fwrite(STDERR, 'This writes plaintext secrets to disk. Continue? [y/N] ');
+            $answer = fgets(STDIN);
+
+            if (! is_string($answer) || strtolower(trim($answer)) !== 'y') {
+                fail('Decryption cancelled.');
+            }
         }
 
         $manager = new EnvFileManager(
-            new EnvFileTransformer(
-                new AesGcmCipher($key)
-            )
+            new EnvFileTransformer(new AesGcmCipher($key))
         );
-
-        $manager->process(
-            $path,
-            $command === 'encrypt-file'
-        );
+        $manager->process($path, $command === 'encrypt-file');
 
         echo "Environment file processed successfully." . PHP_EOL;
         exit(0);
@@ -92,12 +118,11 @@ if ($command === 'encrypt-file' || $command === 'decrypt-file') {
     }
 }
 
-// Interactive encryption of a single value.
-if (!function_exists('shell_exec')) {
+if (! function_exists('shell_exec')) {
     fail('Secure terminal input is unavailable.');
 }
 
-if (!function_exists('stream_isatty') || !stream_isatty(STDIN)) {
+if (! function_exists('stream_isatty') || ! stream_isatty(STDIN)) {
     fail('An interactive terminal is required.');
 }
 
@@ -106,7 +131,7 @@ fwrite(STDERR, 'Enter secret value: ');
 try {
     $stty = shell_exec('stty -g 2>/dev/null');
 
-    if (!is_string($stty) || trim($stty) === '') {
+    if (! is_string($stty) || trim($stty) === '') {
         fail('Unable to configure secure terminal input.');
     }
 
@@ -114,7 +139,6 @@ try {
 
     try {
         shell_exec('stty -echo');
-
         $value = fgets(STDIN);
     } finally {
         shell_exec('stty ' . escapeshellarg($stty));
@@ -125,11 +149,8 @@ try {
         fail('Unable to read secret.');
     }
 
-    $value = rtrim($value, "\r\n");
-
     $cipher = new AesGcmCipher($key);
-
-    echo $cipher->encrypt($value) . PHP_EOL;
+    echo $cipher->encrypt(rtrim($value, "\r\n")) . PHP_EOL;
 } catch (Throwable $exception) {
     fail($exception->getMessage());
 }

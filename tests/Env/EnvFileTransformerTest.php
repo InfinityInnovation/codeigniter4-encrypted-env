@@ -39,6 +39,26 @@ final class EnvFileTransformerTest extends TestCase
         self::assertStringContainsString("# Configuration\n", $encrypted);
     }
 
+    public function testRoundTripPreservesEmptyUnicodeSpecialAndEqualsValuesAndComments(): void
+    {
+        $original = "# Synthetic fixture\n"
+            . "CI_ENVIRONMENT=testing\n"
+            . "EMPTY_VALUE=\n"
+            . "EQUALS_VALUE=left=middle=right\n"
+            . "UNICODE_VALUE=\"fictif-éà-秘密\"\n"
+            . "SPECIAL_VALUE=\"synthetic value # retained = here\" # trailing comment\n";
+
+        $encrypted = $this->transformer->transform($original, true);
+
+        self::assertStringContainsString("# Synthetic fixture\n", $encrypted);
+        self::assertStringContainsString("CI_ENVIRONMENT=testing\n", $encrypted);
+        self::assertStringContainsString("EMPTY_VALUE=\n", $encrypted);
+        self::assertStringContainsString(" # trailing comment\n", $encrypted);
+        self::assertStringNotContainsString('fictif-éà-秘密', $encrypted);
+        self::assertStringNotContainsString('synthetic value', $encrypted);
+        self::assertSame($original, $this->transformer->transform($encrypted, false));
+    }
+
     public function testEncryptionIsIdempotent(): void
     {
         $original = "APP_NAME=Demo\n";
