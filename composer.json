@@ -6,7 +6,7 @@
     "require": {
         "php": "^8.1",
         "ext-openssl": "*",
-        "codeigniter4/framework": "^4.3"
+        "codeigniter4/framework": "^4.3.7"
     },
     "autoload": {
         "psr-4": {

@@ -2,7 +2,7 @@
 
 ## English
 
-The package supports CodeIgniter 4.3.7/4.3.8's legacy bootstrap and tests the latest stable CodeIgniter version allowed by the Composer constraint `^4.3` (currently 4.7.6). It decrypts `.env` values beginning with `enc:v1:` before CodeIgniter uses them. The AES-256-GCM format is unchanged.
+The package supports CodeIgniter 4.3.7/4.3.8's legacy bootstrap. The CI matrix includes 4.4.8 and the latest stable CodeIgniter version allowed by the Composer constraint `^4.3.7` (currently 4.7.6); remote results for the current uncommitted changes are pending. It decrypts `.env` values beginning with `enc:v1:` before CodeIgniter uses them. The AES-256-GCM format is unchanged.
 
 > **Legacy framework warning:** CodeIgniter 4.3.7/4.3.8 are covered only as legacy compatibility baselines and have known security advisories. Do not use these versions in production; use a currently maintained CodeIgniter release.
 
@@ -136,7 +136,7 @@ To rotate keys without losing access, keep the old key available while decryptin
 
 ### Spark CLI
 
-The package registers these commands with the CodeIgniter 4.3.7/4.3.8 historical and modern CodeIgniter 4 bootstraps:
+The package registers these commands with the historical and modern CodeIgniter 4 bootstraps:
 
 ```bash
 php spark encrypted-env:install
@@ -154,13 +154,25 @@ php spark encrypted-env:restore .env.encrypted-env-rotate-YYYYMMDD-HHMMSS-xxxxxx
 
 `encrypted-env:install` updates `spark` and detects CodeIgniter web bootstraps in `public/index.php` or a root-level `index.php`. If both are actual framework entrypoints, both are updated; unrelated wrapper files are left untouched. Each changed file gets an `.encrypted-env.bak` backup, and the installer rolls back on failure.
 
+The installer checks required project configuration before changing files. CodeIgniter 4.4.0 and later require `app/Config/Routing.php`; if it is missing, the installer stops and points to the version-matched template in `vendor/codeigniter4/framework/app/Config/Routing.php`. Review and copy the template into the application, merge custom settings, and rerun. The package never overwrites application configuration or modifies framework files under `vendor/`. If Spark cannot boot far enough to run the command, use the standalone installer:
+
+```bash
+php vendor/infinityinnovationsdev/codeigniter4-encrypted-env/bin/encrypted-env install --root=.
+```
+
+The legacy encrypted dotenv loader defines `ENVIRONMENT` only after `.env` has been loaded and only when it is still undefined. It preserves a valid `CI_ENVIRONMENT` value; otherwise it uses CodeIgniter's `production` default.
+
 Commands that accept file paths support `--file=/absolute/path/to/.env`; diagnostics and installation support `--root=/absolute/path/to/project`. `key:generate` refuses an existing path, and `--force` is required to confirm overwriting. Decryption and rotation require `--yes` in non-interactive use. The key is never printed. By default, `CI_ENVIRONMENT`, `PATH`, `HOME`, `USER`, `SHELL`, `PWD`, and `TMPDIR` remain plaintext; other eligible values are encrypted. Every changed `.env` is atomically replaced only after a persistent protected backup has been written. On POSIX, backups and decrypted output use mode `0600`; on Windows, they inherit the parent directory's NTFS ACL, which must be restricted.
 
 To rotate keys without losing access, run `key:rotate` with the old key configured and a **different, unused external path** for the new key. The command keeps the old key, creates the new key file, decrypts/re-encrypts values and validates the new ciphertext before replacing `.env`. It does not modify the active PHP environment. Then configure `ENCRYPTED_ENV_MASTER_KEY_FILE` for both CLI and web processes to the new path and verify `key:check`, `test`, CLI startup, and HTTP startup. Retain the old key and the protected rotation backup until all restore paths and old deployments have been verified or expired. For rollback, restore the package backup with the old key available and restore the old key path in both process configurations.
 
+### Deploying independent instances without Spark
+
+Prepare each bank or deployment instance independently: encrypt its own `.env` with its own external master key, deliver the encrypted `.env` with the application artifact, and deliver the key through that instance's approved secret-management channel. Do not include any master key in Git, an application archive, or a container image. Provision the key outside the application and web roots, with read access limited to the PHP worker identity. At runtime, the configured process variable or ignored local PHP configuration lets the bootstrap decrypt automatically; production deployment does not require Spark commands. Verify that each instance's `.env` and key belong together with an HTTP smoke test.
+
 ## Français
 
-Le package prend en charge les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Il déchiffre les valeurs `.env` commençant par `enc:v1:` avant leur utilisation par CodeIgniter. Le format AES-256-GCM reste inchangé.
+Le package prend en charge les bootstraps historiques de CodeIgniter 4.3.7/4.3.8. La matrice CI inclut 4.4.8 et la dernière version stable admise par la contrainte Composer `^4.3.7` (actuellement 4.7.6) ; les résultats distants pour les changements locaux restent en attente. Il déchiffre les valeurs `.env` commençant par `enc:v1:` avant leur utilisation par CodeIgniter. Le format AES-256-GCM reste inchangé.
 
 > **Avertissement sur les versions historiques :** CodeIgniter 4.3.7/4.3.8 sont conservés uniquement comme bases de compatibilité anciennes et comportent des avis de sécurité connus. Ne pas les utiliser en production ; privilégier une version CodeIgniter maintenue.
 
@@ -292,7 +304,7 @@ Pour faire une rotation sans perdre l'accès, conserver l'ancienne clé pendant 
 
 ### CLI Spark
 
-Le package enregistre ces commandes avec les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 et le bootstrap moderne de CodeIgniter 4 :
+Le package enregistre ces commandes avec les bootstraps historiques et modernes de CodeIgniter 4 :
 
 ```bash
 php spark encrypted-env:install
@@ -309,6 +321,14 @@ php spark encrypted-env:restore .env.encrypted-env-rotate-YYYYMMDD-HHMMSS-xxxxxx
 ```
 
 `encrypted-env:install` adapte `spark` et détecte les bootstraps CodeIgniter dans `public/index.php` ou dans un `index.php` à la racine. Si les deux sont de véritables points d'entrée, ils sont tous deux adaptés ; les wrappers sans bootstrap restent intacts. Chaque fichier modifié reçoit une sauvegarde `.encrypted-env.bak` et l'installation restaure les originaux en cas d'échec.
+
+L'installateur vérifie les configurations applicatives requises avant toute modification. À partir de CodeIgniter 4.4.0, `app/Config/Routing.php` est requis ; s'il manque, l'installation s'arrête et indique le modèle correspondant à la version installée dans `vendor/codeigniter4/framework/app/Config/Routing.php`. Examiner et copier ce modèle dans l'application, fusionner les réglages personnalisés, puis relancer l'installation. Le package n'écrase jamais une configuration applicative et ne modifie aucun fichier du framework sous `vendor/`. Si Spark ne démarre pas assez loin pour exécuter la commande, utiliser l'installateur autonome :
+
+```bash
+php vendor/infinityinnovationsdev/codeigniter4-encrypted-env/bin/encrypted-env install --root=.
+```
+
+Le chargeur historique définit `ENVIRONMENT` seulement après le chargement du `.env` et uniquement si la constante n'existe pas déjà. Il conserve une valeur `CI_ENVIRONMENT` valide ; sinon, il utilise la valeur par défaut `production` de CodeIgniter.
 
 Les commandes qui acceptent un fichier prennent `--file=/chemin/absolu/vers/.env`; les diagnostics et l'installation acceptent `--root=/chemin/absolu/du/projet`. `key:generate` refuse un chemin existant ; `--force` est nécessaire pour confirmer son remplacement. Le déchiffrement et la rotation exigent `--yes` en mode non interactif. La clé n'est jamais affichée. Par défaut, `CI_ENVIRONMENT`, `PATH`, `HOME`, `USER`, `SHELL`, `PWD` et `TMPDIR` restent en clair ; les autres valeurs éligibles sont chiffrées. Chaque `.env` modifié est remplacé atomiquement après création d'une sauvegarde persistante protégée. Sur POSIX, les sauvegardes et le fichier déchiffré sont en mode `0600` ; sur Windows, ils héritent des ACL NTFS du dossier parent, qui doivent être restrictives.
 

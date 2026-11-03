@@ -119,6 +119,10 @@ class CodeIgniterInstaller
             ];
         }
 
+        if ($pending !== []) {
+            $this->validateRequiredProjectConfiguration($projectRoot);
+        }
+
         $createdBackups = [];
 
         try {
@@ -226,5 +230,63 @@ class CodeIgniterInstaller
         return $file === 'public/index.php'
             ? "require_once dirname(__DIR__) . '/vendor/autoload.php';"
             : "require_once __DIR__ . '/vendor/autoload.php';";
+    }
+
+    private function validateRequiredProjectConfiguration(string $projectRoot): void
+    {
+        $frameworkRoot = rtrim($projectRoot, '/\\')
+            . '/vendor/codeigniter4/framework';
+        $servicesPath = $frameworkRoot . '/system/Config/Services.php';
+        $routingTemplate = $frameworkRoot . '/app/Config/Routing.php';
+
+        if (! is_file($servicesPath)) {
+            return;
+        }
+
+        $services = file_get_contents($servicesPath);
+
+        if ($services === false) {
+            throw new RuntimeException(
+                'Cannot inspect the installed CodeIgniter routing services. '
+                . 'No project files were changed.'
+            );
+        }
+
+        if (! str_contains($services, 'config(Routing::class)')) {
+            return;
+        }
+
+        $routingConfig = rtrim($projectRoot, '/\\') . '/app/Config/Routing.php';
+
+        if (file_exists($routingConfig) || is_link($routingConfig)) {
+            if (is_file($routingConfig) && is_readable($routingConfig)) {
+                return;
+            }
+
+            throw new RuntimeException(
+                'The installed CodeIgniter framework requires a readable regular file at '
+                . 'app/Config/Routing.php. The existing path is not a readable file. '
+                . 'No project files were changed; inspect the file and its permissions. '
+                . 'The installer never replaces an existing application configuration.'
+            );
+        }
+
+        if (is_file($routingTemplate)) {
+            $templateInstructions = 'Review the matching template at '
+                . 'vendor/codeigniter4/framework/app/Config/Routing.php, copy it into '
+                . 'app/Config/Routing.php, merge any application-specific routing settings, '
+                . 'and rerun the installer.';
+        } else {
+            $templateInstructions = 'Retrieve the Routing.php template from the CodeIgniter '
+                . 'application starter matching the installed framework version, merge any '
+                . 'application-specific routing settings, and rerun the installer.';
+        }
+
+        throw new RuntimeException(
+            'The installed CodeIgniter framework requires app/Config/Routing.php, '
+            . 'but that application configuration is missing. No project files were changed. '
+            . $templateInstructions
+            . ' Existing application configuration and vendor files are never overwritten.'
+        );
     }
 }

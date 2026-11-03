@@ -2,7 +2,7 @@ name: PHP Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
     branches: [main]
 
@@ -48,6 +48,8 @@ jobs:
             codeigniter: '4.3.7'
           - php: '8.1'
             codeigniter: '4.3.8'
+          - php: '8.1'
+            codeigniter: '4.4.8'
           - php: '8.2'
             codeigniter: '^4.3'
           - php: '8.3'
@@ -72,7 +74,7 @@ jobs:
         run: composer validate --strict
 
       - name: Install dependencies for CodeIgniter ${{ matrix.codeigniter }}
-        if: matrix.php != '8.1' || (matrix.codeigniter != '4.3.7' && matrix.codeigniter != '4.3.8')
+        if: matrix.php != '8.1' || (matrix.codeigniter != '4.3.7' && matrix.codeigniter != '4.3.8' && matrix.codeigniter != '4.4.8')
         run: >-
           composer update codeigniter4/framework
           --with codeigniter4/framework:${{ matrix.codeigniter }}
@@ -82,7 +84,7 @@ jobs:
           --no-progress
 
       - name: Install legacy CodeIgniter dependencies
-        if: matrix.php == '8.1' && (matrix.codeigniter == '4.3.7' || matrix.codeigniter == '4.3.8')
+        if: matrix.php == '8.1' && (matrix.codeigniter == '4.3.7' || matrix.codeigniter == '4.3.8' || matrix.codeigniter == '4.4.8')
         run: >-
           composer update codeigniter4/framework
           --with codeigniter4/framework:${{ matrix.codeigniter }}

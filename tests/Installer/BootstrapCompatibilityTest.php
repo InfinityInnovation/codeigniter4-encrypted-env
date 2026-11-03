@@ -362,6 +362,7 @@ PHP
 
         $previousKey = getenv('ENCRYPTED_ENV_MASTER_KEY');
         $previousKeyFile = getenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
+        $previousEnvironment = getenv('CI_ENVIRONMENT');
         $probeNames = [
             'BOOTSTRAP_TEST_SECRET',
             'BOOTSTRAP_TEST_SECOND',
@@ -381,6 +382,7 @@ PHP
 
         putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
         putenv('ENCRYPTED_ENV_MASTER_KEY');
+        putenv('CI_ENVIRONMENT');
 
         try {
             $installer = new CodeIgniterInstaller();
@@ -400,7 +402,7 @@ PHP
             );
             self::assertSame(0, $exitCode, $error . $output);
             self::assertSame(
-                '1|1|1',
+                '1|1|1|1',
                 trim($output)
             );
 
@@ -410,7 +412,7 @@ PHP
                 $webEntrypoint
             );
             self::assertSame(200, $status, $error . $serverLog);
-            self::assertSame('1|1|1', trim((string) $response), $error . $serverLog);
+            self::assertSame('1|1|1|1', trim((string) $response), $error . $serverLog);
             self::assertStringNotContainsString($expected, (string) $response);
             self::assertStringNotContainsString($secondExpected, (string) $response);
             self::assertStringNotContainsString($expected, $serverLog);
@@ -426,6 +428,12 @@ PHP
                 putenv('ENCRYPTED_ENV_MASTER_KEY_FILE');
             } else {
                 putenv('ENCRYPTED_ENV_MASTER_KEY_FILE=' . $previousKeyFile);
+            }
+
+            if ($previousEnvironment === false) {
+                putenv('CI_ENVIRONMENT');
+            } else {
+                putenv('CI_ENVIRONMENT=' . $previousEnvironment);
             }
 
             foreach ($previousProbeVariables as $name => $values) {
@@ -487,7 +495,10 @@ PHP
 
         file_put_contents(
             $root . '/.env',
-            'BOOTSTRAP_TEST_SECRET='
+            'CI_ENVIRONMENT='
+                . (new AesGcmCipher($key))->encrypt('testing')
+                . PHP_EOL
+                . 'BOOTSTRAP_TEST_SECRET='
                 . (new AesGcmCipher($key))->encrypt($expected)
                 . PHP_EOL
                 . 'BOOTSTRAP_TEST_SECOND='
@@ -560,6 +571,7 @@ foreach ($expected as $name => $value) {
         && ($_ENV[$name] ?? null) === $value
         && ($_SERVER[$name] ?? null) === $value;
 }
+$checks[] = defined('ENVIRONMENT') && ENVIRONMENT === 'testing';
 echo implode('|', array_map(static fn (bool $check): string => $check ? '1' : '0', $checks));
 PHP;
             $web = <<<'PHP'
@@ -577,6 +589,7 @@ foreach ($expected as $name => $value) {
         && ($_ENV[$name] ?? null) === $value
         && ($_SERVER[$name] ?? null) === $value;
 }
+$checks[] = defined('ENVIRONMENT') && ENVIRONMENT === 'testing';
 echo implode('|', array_map(static fn (bool $check): string => $check ? '1' : '0', $checks));
 PHP;
             $webRootExpression = $webEntrypoint === 'index.php'
@@ -621,6 +634,8 @@ class Boot
                 && ($_ENV[$name] ?? null) === $value
                 && ($_SERVER[$name] ?? null) === $value;
         }
+
+        $checks[] = defined('ENVIRONMENT') && ENVIRONMENT === 'testing';
 
         echo implode('|', array_map(static fn (bool $check): string => $check ? '1' : '0', $checks));
     }
