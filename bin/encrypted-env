@@ -27,6 +27,7 @@ use EncryptedEnv\Crypto\AesGcmCipher;
 use EncryptedEnv\Env\EnvFileManager;
 use EncryptedEnv\Env\EnvFileTransformer;
 use EncryptedEnv\Env\MasterKeyResolver;
+use EncryptedEnv\Installer\CodeIgniterInstaller;
 
 function fail(string $message): never
 {
@@ -36,8 +37,54 @@ function fail(string $message): never
 
 $command = $argv[1] ?? null;
 
+if ($command === 'install') {
+    $root = getcwd();
+
+    for ($index = 2; $index < count($argv); $index++) {
+        $argument = $argv[$index];
+
+        if (str_starts_with($argument, '--root=')) {
+            $root = substr($argument, strlen('--root='));
+        } elseif ($argument === '--root') {
+            $root = $argv[++$index] ?? null;
+
+            if (! is_string($root) || $root === '' || str_starts_with($root, '--')) {
+                fail('The --root option requires a project directory.');
+            }
+        } else {
+            fail('Unknown option for install. Use --root=PROJECT_DIRECTORY.');
+        }
+    }
+
+    if (! is_string($root) || $root === '') {
+        fail('Unable to determine the project directory.');
+    }
+
+    $projectRoot = realpath($root);
+
+    if ($projectRoot === false || ! is_dir($projectRoot)) {
+        fail('Invalid project directory.');
+    }
+
+    try {
+        $results = (new CodeIgniterInstaller())->install($projectRoot);
+
+        foreach ($results as $file => $status) {
+            echo "{$file}: {$status}" . PHP_EOL;
+        }
+
+        echo "Installation completed." . PHP_EOL;
+        exit(0);
+    } catch (Throwable $exception) {
+        fail($exception->getMessage());
+    }
+}
+
 if (! in_array($command, ['encrypt', 'encrypt-file', 'decrypt-file'], true)) {
-    fail('Usage: encrypted-env encrypt|encrypt-file|decrypt-file [--file=PATH] [--yes]');
+    fail(
+        'Usage: encrypted-env install [--root=PROJECT_DIRECTORY] | '
+        . 'encrypt|encrypt-file|decrypt-file [--file=PATH] [--yes]'
+    );
 }
 
 $file = null;

@@ -44,9 +44,20 @@ final class CodeIgniterInstallerTest extends TestCase
     {
         $root = sys_get_temp_dir() . '/encrypted-env-' . bin2hex(random_bytes(8));
         mkdir($root . '/public', 0700, true);
-        file_put_contents($root . '/spark', $this->modernEntrypoint('bootSpark'));
+        $spark = str_replace(
+            "exit(Boot::bootSpark(\$paths));",
+            "define('APP_BOOTSTRAP_CUSTOMIZATION', true);" . PHP_EOL
+                . "exit(Boot::bootSpark(\$paths));",
+            $this->modernEntrypoint('bootSpark')
+        );
+        file_put_contents($root . '/spark', $spark);
         file_put_contents($root . '/public/index.php', $this->modernEntrypoint('bootWeb'));
         file_put_contents($root . '/index.php', $this->legacyWebEntrypoint());
+        $envContents = "CI_ENVIRONMENT=testing\nDB_PASSWORD=synthetic-test-value\n";
+        $keyPath = $root . '-external-master.key';
+        $keyContents = "synthetic-external-key-file\n";
+        file_put_contents($root . '/.env', $envContents);
+        file_put_contents($keyPath, $keyContents);
 
         try {
             $results = (new CodeIgniterInstaller())->install($root);
@@ -61,6 +72,114 @@ final class CodeIgniterInstallerTest extends TestCase
             );
             self::assertFileExists($root . '/public/index.php.encrypted-env.bak');
             self::assertFileExists($root . '/index.php.encrypted-env.bak');
+            $installedSpark = (string) file_get_contents($root . '/spark');
+            self::assertStringContainsString('APP_BOOTSTRAP_CUSTOMIZATION', $installedSpark);
+            self::assertSame(
+                [
+                    'spark' => 'already installed',
+                    'public/index.php' => 'already installed',
+                    'index.php' => 'already installed',
+                ],
+                (new CodeIgniterInstaller())->install($root)
+            );
+            self::assertSame($installedSpark, file_get_contents($root . '/spark'));
+            self::assertSame(
+                1,
+                substr_count($installedSpark, '\\EncryptedEnv\\Bootstrap\\EncryptedBoot::bootSpark')
+            );
+            self::assertSame($envContents, file_get_contents($root . '/.env'));
+            self::assertSame($keyContents, file_get_contents($keyPath));
+        } finally {
+            $this->removeProject($root);
+            unlink($keyPath);
+        }
+    }
+
+    public function testMissingRequiredRoutingConfigurationStopsBeforeAnyEntrypointChanges(): void
+    {
+        $root = sys_get_temp_dir() . '/encrypted-env-' . bin2hex(random_bytes(8));
+        mkdir($root . '/app/Config', 0700, true);
+        mkdir($root . '/public', 0700, true);
+        mkdir($root . '/vendor/codeigniter4/framework/system/Config', 0700, true);
+        mkdir($root . '/vendor/codeigniter4/framework/app/Config', 0700, true);
+        $spark = $this->modernEntrypoint('bootSpark');
+        $web = $this->modernEntrypoint('bootWeb');
+        $template = "<?php\nnamespace Config;\nclass Routing {}\n";
+        file_put_contents($root . '/spark', $spark);
+        file_put_contents($root . '/public/index.php', $web);
+        file_put_contents(
+            $root . '/vendor/codeigniter4/framework/system/Config/Services.php',
+            "<?php\nuse Config\\Routing;\nconfig(Routing::class);\n"
+        );
+        file_put_contents(
+            $root . '/vendor/codeigniter4/framework/app/Config/Routing.php',
+            $template
+        );
+
+        try {
+            try {
+                (new CodeIgniterInstaller())->install($root);
+                self::fail('An exception was expected.');
+            } catch (RuntimeException $exception) {
+                self::assertStringContainsString('requires app/Config/Routing.php', $exception->getMessage());
+                self::assertStringContainsString('No project files were changed', $exception->getMessage());
+            }
+
+            self::assertSame($spark, file_get_contents($root . '/spark'));
+            self::assertSame($web, file_get_contents($root . '/public/index.php'));
+            self::assertFileDoesNotExist($root . '/spark.encrypted-env.bak');
+            self::assertFileDoesNotExist($root . '/public/index.php.encrypted-env.bak');
+            self::assertSame(
+                $template,
+                file_get_contents($root . '/vendor/codeigniter4/framework/app/Config/Routing.php')
+            );
+
+            $applicationRouting = "<?php\nnamespace Config;\nclass Routing { public string \$custom = 'kept'; }\n";
+            file_put_contents($root . '/app/Config/Routing.php', $applicationRouting);
+
+            self::assertSame(
+                ['spark' => 'installed', 'public/index.php' => 'installed'],
+                (new CodeIgniterInstaller())->install($root)
+            );
+            self::assertSame(
+                $applicationRouting,
+                file_get_contents($root . '/app/Config/Routing.php')
+            );
+        } finally {
+            $this->removeProject($root);
+        }
+    }
+
+    public function testStandaloneInstallerWorksWithoutBootingSpark(): void
+    {
+        $root = sys_get_temp_dir() . '/encrypted-env-' . bin2hex(random_bytes(8));
+        mkdir($root . '/public', 0700, true);
+        file_put_contents($root . '/spark', $this->modernEntrypoint('bootSpark'));
+        file_put_contents($root . '/public/index.php', $this->modernEntrypoint('bootWeb'));
+        $binary = dirname(__DIR__, 2) . '/bin/encrypted-env';
+
+        try {
+            foreach ([['installed', 'installed'], ['already installed', 'already installed']] as $expected) {
+                $process = proc_open(
+                    [PHP_BINARY, $binary, 'install', '--root=' . $root],
+                    [
+                        0 => ['pipe', 'r'],
+                        1 => ['pipe', 'w'],
+                        2 => ['pipe', 'w'],
+                    ],
+                    $pipes
+                );
+                self::assertIsResource($process);
+                fclose($pipes[0]);
+                $output = stream_get_contents($pipes[1]);
+                $error = stream_get_contents($pipes[2]);
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+
+                self::assertSame(0, proc_close($process), $error . $output);
+                self::assertStringContainsString('spark: ' . $expected[0], $output);
+                self::assertStringContainsString('public/index.php: ' . $expected[1], $output);
+            }
         } finally {
             $this->removeProject($root);
         }
@@ -140,23 +259,23 @@ CODE;
 
     private function removeProject(string $root): void
     {
-        foreach ([
-            '/spark.encrypted-env.bak',
-            '/public/index.php.encrypted-env.bak',
-            '/index.php.encrypted-env.bak',
-            '/spark',
-            '/public/index.php',
-            '/public',
-            '/index.php',
-            '',
-        ] as $path) {
-            $target = $root . $path;
+        if (! is_dir($root)) {
+            return;
+        }
 
-            if (is_dir($target)) {
-                rmdir($target);
-            } elseif (file_exists($target)) {
-                unlink($target);
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            if ($item->isDir()) {
+                rmdir($item->getPathname());
+            } else {
+                unlink($item->getPathname());
             }
         }
+
+        rmdir($root);
     }
 }

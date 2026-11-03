@@ -28,6 +28,27 @@ final class EncryptedDotEnv extends DotEnv
         }
     }
 
+    public function load(): bool
+    {
+        $loaded = parent::load();
+
+        if (! defined('ENVIRONMENT')) {
+            $environment = function_exists('env')
+                ? env('CI_ENVIRONMENT', 'production')
+                : ($_ENV['CI_ENVIRONMENT']
+                    ?? $_SERVER['CI_ENVIRONMENT']
+                    ?? getenv('CI_ENVIRONMENT'));
+
+            if (! is_string($environment) || $environment === '') {
+                $environment = 'production';
+            }
+
+            define('ENVIRONMENT', $environment);
+        }
+
+        return $loaded;
+    }
+
     protected function setVariable(string $name, string $value = ''): void
     {
         if (str_starts_with($value, 'enc:v1:')) {

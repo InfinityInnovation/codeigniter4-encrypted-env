@@ -3,9 +3,9 @@
 
 **Éditeur :** Infinity Innovations  
 **Package :** `infinityinnovationsdev/codeigniter4-encrypted-env`  
-**Version documentée :** v1.1.2 (préparation, non publiée)
+**Version de référence :** v1.1.4 ; les correctifs décrits ici restent en validation et ne sont pas publiés
 **Licence :** MIT  
-**Compatibilité ciblée par la matrice CI :** CodeIgniter 4.3.7/4.3.8 sur PHP 8.1 et la dernière version stable admise par `^4.3` (actuellement 4.7.6) sur PHP 8.2–8.5
+**Matrice CI configurée :** CodeIgniter 4.3.7, 4.3.8 et 4.4.8 sur PHP 8.1, puis la dernière version stable admise par `^4.3.7` (actuellement 4.7.6) sur PHP 8.2–8.5. Les résultats pour les modifications locales en attente ne sont pas encore confirmés par GitHub Actions.
 
 ---
 
@@ -36,19 +36,21 @@ Avant de commencer, le développeur doit disposer de :
 - Un accès au terminal.
 - Les droits nécessaires pour modifier les fichiers du projet.
 
-**Compatibilité :** l'intégration prend en charge les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 et teste la dernière version stable admise par la contrainte Composer `^4.3` (actuellement 4.7.6). Les versions intermédiaires ne sont pas toutes testées individuellement.
+**Compatibilité :** l'intégration prend en charge les bootstraps historiques de CodeIgniter 4.3.7/4.3.8 ; la matrice CI inclut 4.4.8 et la dernière version stable admise par la contrainte Composer `^4.3.7` (actuellement 4.7.6). L'exécution distante de cette matrice pour les modifications locales reste à confirmer ; les versions intermédiaires ne sont pas toutes testées individuellement.
 
 ## 3. Installer la bibliothèque
 
 Ouvrir le terminal dans le répertoire racine de l'application CodeIgniter 4.
 
-Exécuter :
+Ajouter d'abord la dépendance sans résoudre ni modifier les autres dépendances :
 
 ```bash
-composer require "infinityinnovationsdev/codeigniter4-encrypted-env:^1.1.2"
+composer require "infinityinnovationsdev/codeigniter4-encrypted-env:^1.1.4" --no-update
+composer update infinityinnovationsdev/codeigniter4-encrypted-env --with-dependencies --no-install
+composer show codeigniter4/framework
 ```
 
-Cette commande installe la bibliothèque depuis Packagist après approbation et publication de la v1.1.2. Cette version est encore en préparation.
+Examiner `composer.lock` avant d'appliquer la résolution. L'installateur du package ne lance pas Composer, ne modifie pas les manifestes, ne met pas CodeIgniter à niveau et n'écrit pas dans `vendor/codeigniter4/framework`. Conserver la version verrouillée du framework si elle satisfait la contrainte `^4.3.7` du package.
 
 Vérifier son installation :
 
@@ -56,7 +58,7 @@ Vérifier son installation :
 composer show infinityinnovationsdev/codeigniter4-encrypted-env
 ```
 
-La version installée doit être au moins `v1.1.1`.
+La version installée doit être au moins `v1.1.4`.
 
 ## 4. Configurer CodeIgniter 4
 
@@ -92,6 +94,16 @@ exit(\EncryptedEnv\Bootstrap\EncryptedBoot::bootWeb($paths));
 Dans `spark`, le chemin du fichier est `__DIR__ . '/vendor/infinityinnovationsdev/codeigniter4-encrypted-env/src/Bootstrap/EncryptedBoot.php'` et l'appel final est `EncryptedBoot::bootSpark($paths)`. Le chargeur Composer reste initialisé par CodeIgniter dans son ordre habituel.
 
 Le chargement intervient avant l'initialisation de l'application : toutes les valeurs `.env` préfixées par `enc:v1:` sont déchiffrées avant leur utilisation. La configuration de la clé doit être fournie à l'environnement du processus PHP avant le chargement de `.env`.
+
+Après le déchiffrement, `ENVIRONMENT` n'est définie que si elle ne l'est pas déjà. Une valeur `CI_ENVIRONMENT` valide est conservée ; sinon, le défaut CodeIgniter `production` est utilisé.
+
+À partir de CodeIgniter 4.4.0, l'application doit fournir `app/Config/Routing.php`. Si ce fichier manque, l'installateur arrête toute modification et indique le modèle correspondant à la version installée dans `vendor/codeigniter4/framework/app/Config/Routing.php`. Examiner et copier le modèle dans `app/Config`, fusionner les paramètres personnalisés, puis relancer l'installation ; aucun fichier existant ni aucun fichier sous `vendor/` n'est remplacé.
+
+Si Spark ne démarre pas assez loin pour exécuter la commande, utiliser l'installateur autonome :
+
+```bash
+php vendor/infinityinnovationsdev/codeigniter4-encrypted-env/bin/encrypted-env install --root=.
+```
 
 ## 5. Préparer le fichier `.env`
 
@@ -175,6 +187,18 @@ Pour une commande ponctuelle, la variable peut être configurée au lancement du
 ```bash
 ENCRYPTED_ENV_MASTER_KEY_FILE="$HOME/.config/encrypted-env/master.key" php spark env
 ```
+
+Si le serveur HTTP ne transmet pas les variables de processus, créer `app/Config/EncryptedEnv.local.php` avec uniquement le chemin absolu de la clé externe :
+
+```php
+<?php
+defined('ENCRYPTED_ENV_LOCAL_CONFIG_LOADER')
+    || exit('No direct script access allowed');
+
+return ['master_key_file' => '/chemin/absolu/securise/master.key'];
+```
+
+Ajouter `/app/Config/EncryptedEnv.local.php` au `.gitignore` de l'application. Le fichier ne contient jamais la clé et est chargé avant `.env`. Les variables explicites `ENCRYPTED_ENV_MASTER_KEY_FILE` et `ENCRYPTED_ENV_MASTER_KEY` restent prioritaires ; une source configurée mais invalide arrête le démarrage sans fallback.
 
 PowerShell :
 
@@ -431,6 +455,8 @@ Cette commande permet de remettre les valeurs en clair dans le fichier `.env`, a
 
 En production, définir `ENCRYPTED_ENV_MASTER_KEY_FILE` dans l'environnement du processus PHP selon le serveur utilisé ci-dessus. La bibliothèque ne choisit aucun chemin par défaut et ne tente pas de lire un chemin configuré dans `.env`.
 
+Pour plusieurs banques ou instances, préparer un `.env` distinct et le chiffrer avec une clé externe distincte par instance. Livrer le `.env` chiffré avec l'application, mais transmettre la clé par le canal de gestion des secrets approuvé, séparément de Git, de l'archive applicative et de l'image conteneur. Installer la clé hors du projet et de la racine Web, avec un accès de lecture limité à l'identité du processus PHP. Le déchiffrement est automatique au démarrage ; aucune commande Spark n'est nécessaire sur le serveur de production. Vérifier chaque instance par un contrôle HTTP sans afficher de valeurs secrètes.
+
 Ne pas remplacer directement la clé d'un fichier si les valeurs `enc:v1:` existantes ont été chiffrées avec l'ancienne clé. Procédure de rotation sans perte d'accès :
 
 1. Sauvegarder `.env` et protéger la copie, ainsi que l'ancienne clé.
@@ -443,6 +469,12 @@ Ne pas remplacer directement la clé d'un fichier si les valeurs `enc:v1:` exist
 La perte de l'ancienne clé avant la migration rend les valeurs chiffrées avec celle-ci irrécupérables. Ne jamais afficher les valeurs déchiffrées ni la clé dans les journaux ou sorties CLI.
 
 ## 13. Erreurs fréquentes
+
+### Erreur : `RouteCollection::__construct()` reçoit `null` pour `Routing`
+
+**Cause :** à partir de CodeIgniter 4.4.0, l'application doit fournir `app/Config/Routing.php`. L'absence de ce fichier est un prérequis applicatif manquant, distinct d'un défaut du package.
+
+**Solution :** examiner le modèle `vendor/codeigniter4/framework/app/Config/Routing.php` de la version installée, le copier dans `app/Config/Routing.php`, fusionner les réglages métier et relancer l'installation. Le package n'écrase jamais un fichier existant et ne modifie pas `vendor/`. Si Spark ne peut pas démarrer, utiliser `php vendor/infinityinnovationsdev/codeigniter4-encrypted-env/bin/encrypted-env install --root=.` pour obtenir le diagnostic sans démarrer CodeIgniter.
 
 ### Erreur : `Invalid master key`
 
@@ -502,8 +534,8 @@ Les tests fonctionnels suivants ont été réalisés avec CodeIgniter 4.7.6 :
 | Démarrage de CodeIgniter avec `.env` chiffré | Validé |
 | Déchiffrement de plusieurs variables et accès HTTP de contrôle | Validé |
 | Compatibilité CodeIgniter 4.2 | Non ciblée |
-| Compatibilité CodeIgniter 4.3.7/4.3.8 | Jobs PHP 8.1 configurés ; exécution GitHub Actions à confirmer |
-| Compatibilité CodeIgniter 4.7.6 | 73 tests et 333 assertions sur PHP 8.5 |
+| Compatibilité CodeIgniter 4.3.7/4.3.8/4.4.8 | Jobs PHP 8.1 configurés ; exécution CI distante pour les changements locaux à confirmer |
+| Compatibilité CodeIgniter 4.7.6 | 86 tests et 406 assertions exécutés localement sur PHP 8.5 |
 | Matrice GitHub Actions PHP 8.1–8.5 | Configurée ; exécution CI distante non confirmée |
 | Validation complète en production | À réaliser |
 

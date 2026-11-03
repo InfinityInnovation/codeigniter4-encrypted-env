@@ -17,7 +17,7 @@ Instead of storing database passwords, API keys, and other secrets as plaintext 
 
 The library uses **AES-256-GCM**, provided by PHP OpenSSL.
 
-> **Project status:** Experimental. The test matrix targets CodeIgniter 4.3.7/4.3.8 on PHP 8.1 and the latest stable release allowed by `^4.3` (currently 4.7.6) on PHP 8.2–8.5. The project has not undergone an independent security audit.
+> **Project status:** Experimental. The compatibility matrix targets CodeIgniter 4.3.7, 4.3.8, 4.4.8, and the latest stable release allowed by `^4.3.7` (currently 4.7.6). The project has not undergone an independent security audit.
 
 > **Legacy framework warning:** CodeIgniter 4.3.7/4.3.8 are retained only as compatibility-test baselines and have known security advisories. Do not use them in production; use a currently maintained CodeIgniter release instead.
 
@@ -38,17 +38,21 @@ The library uses **AES-256-GCM**, provided by PHP OpenSSL.
 ## Requirements
 
 - PHP 8.1 or higher
-- CodeIgniter 4.3 or higher
+- CodeIgniter 4.3.7 or higher within the CodeIgniter 4.x series
 - Composer
 - PHP OpenSSL extension
 
 ## Installation
 
-After version 1.1.2 has been approved and published on Packagist:
+Install the package without changing the framework dependency first:
 
 ```bash
-composer require "infinityinnovationsdev/codeigniter4-encrypted-env:^1.1.2"
+composer require "infinityinnovationsdev/codeigniter4-encrypted-env:^1.1.4" --no-update
+composer update infinityinnovationsdev/codeigniter4-encrypted-env --with-dependencies --no-install
+composer show codeigniter4/framework
 ```
+
+Review `composer.lock` before applying the dependency changes. The package installer never invokes Composer, edits `composer.json`/`composer.lock`, upgrades CodeIgniter, or writes to `vendor/codeigniter4/framework`. Keep the currently locked framework version when it satisfies the package's `^4.3.7` constraint.
 
 For development from the source repository:
 
@@ -198,6 +202,14 @@ The package registers commands with CodeIgniter Spark on the historical 4.3.7/4.
 | `php spark encrypted-env:test` | Run an AES-256-GCM round-trip and validate encrypted `.env` values. |
 | `php spark encrypted-env:restore BACKUP --yes` | Restore a package-created protected backup; preserves the currently installed file as a new backup. |
 
+If CodeIgniter cannot finish booting (for example, because a required application configuration is missing), the installer is also available without Spark:
+
+```bash
+php vendor/infinityinnovationsdev/codeigniter4-encrypted-env/bin/encrypted-env install --root=.
+```
+
+Both installer entrypoints validate prerequisites before changing project files. They back up changed entrypoints, roll back on failure, and are idempotent.
+
 Use `--file=/path/to/.env` for encryption, decryption, testing, security checks, and rotation. Diagnostics and installation accept `--root=/path/to/application`. For example:
 
 ```bash
@@ -278,9 +290,21 @@ It updates `spark` and the recognized web bootstrap in `public/index.php` or a r
 - CodeIgniter 4.3.7/4.3.8's `system/bootstrap.php` flow, replacing the standard DotEnv load with `EncryptedDotEnv`.
 - The modern `CodeIgniter\Boot` flow, using `EncryptedBoot`.
 
-The encrypted loader runs before application initialization, so values with the `enc:v1:` prefix are decrypted before the application consumes them. Re-running the installer is safe and reports already-installed entrypoints without overwriting their backups.
+The encrypted loader runs before application initialization, so values with the `enc:v1:` prefix are decrypted first. `ENVIRONMENT` is then defined only if CodeIgniter has not already defined it, using the loaded `CI_ENVIRONMENT` value or CodeIgniter's `production` default. Thus a configured `development`, `testing`, or other valid environment is preserved. Re-running the installer is safe and reports already-installed entrypoints without duplicating package code or overwriting their backups.
 
 For the modern bootstrap, the installer loads the package's `EncryptedBoot.php` class file directly rather than preloading Composer's autoloader. This lets CodeIgniter load Composer in its normal boot sequence.
+
+### Missing `Routing.php` in CodeIgniter 4.4+
+
+CodeIgniter 4.4.0 and later require the application routing configuration when constructing the route collection. If `app/Config/Routing.php` is missing, the installer stops before changing `spark` or web entrypoints and reports the matching framework template. Review `vendor/codeigniter4/framework/app/Config/Routing.php`, copy it to `app/Config/Routing.php`, merge any application-specific routing settings, and rerun the installer. Existing application configuration is never replaced, and files under `vendor/` are never edited.
+
+For applications whose Spark startup fails before the install command can run, use the standalone command above to receive the same prerequisite error without booting CodeIgniter.
+
+### Deployment without Spark and per-instance keys
+
+Install and integrate the package in the build or staging environment. For each independent application instance, prepare its own `.env`, use that instance's distinct external master key to encrypt it, and deliver only the encrypted `.env` with the application artifact. Deliver the key separately through the bank/operator's approved secret-management process; do not put it in Git, an application archive, a container image, or the web root.
+
+On each server, provision the key outside the application and web root with permissions that allow the PHP worker identity to read it. Configure `ENCRYPTED_ENV_MASTER_KEY_FILE` for that PHP process, or deploy that instance's ignored `app/Config/EncryptedEnv.local.php` containing only its absolute key-file path. At startup, the package decrypts values automatically; production does not need to run Spark. Never reuse one instance's encrypted `.env` with another instance's key. Verify each deployment through an HTTP smoke test and, where permitted, `php spark encrypted-env:key:check`.
 
 ## Encryption Format
 
@@ -343,7 +367,7 @@ Run the test suite:
 vendor/bin/phpunit
 ```
 
-The test suite covers encryption, decryption, incorrect keys, ciphertext and authentication-tag tampering, invalid encrypted payloads, external key-file resolution, DotEnv loading, file operations, and CLI/web entrypoint integration. The CI workflow targets PHP 8.1 with CodeIgniter 4.3.7 and 4.3.8, and PHP 8.2–8.5 with the latest stable CodeIgniter version accepted by `^4.3`. Runtime testing of legacy CodeIgniter on PHP 8.1 must be confirmed by GitHub Actions.
+The test suite covers encryption, decryption, incorrect keys, ciphertext and authentication-tag tampering, invalid encrypted payloads, external key-file resolution, DotEnv loading, file operations, and CLI/web entrypoint integration. The CI workflow targets PHP 8.1 with CodeIgniter 4.3.7, 4.3.8, and 4.4.8, and PHP 8.2–8.5 with the latest stable CodeIgniter version accepted by `^4.3.7`. The pinned legacy-version jobs must pass in GitHub Actions before release.
 
 ## Roadmap
 
@@ -352,7 +376,7 @@ The test suite covers encryption, decryption, incorrect keys, ciphertext and aut
 - [x] Basic CodeIgniter DotEnv integration class
 - [x] Interactive encryption CLI
 - [x] PHPUnit security tests
-- [x] CodeIgniter 4.3.7/4.3.8 and latest-compatible bootstrap integration tests
+- [x] CodeIgniter 4.3.7/4.3.8, 4.4.8, and latest-compatible bootstrap integration matrix configured
 - [x] CLI and web bootstrap compatibility tests
 - [x] External master-key generation and rotation workflow
 - [x] Spark CLI status, doctor, security, encrypt, decrypt, and test commands
